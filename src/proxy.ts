@@ -2,14 +2,14 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Protect dashboard routes
-  const isDashboardRoute = pathname.startsWith('/dashboard') || 
-                          pathname.startsWith('/forms') || 
-                          pathname.startsWith('/templates') || 
-                          pathname.startsWith('/settings');
+  const isDashboardRoute =
+    pathname.startsWith('/dashboard') ||
+    pathname.startsWith('/forms') ||
+    pathname.startsWith('/templates') ||
+    pathname.startsWith('/settings');
 
   const isAuthRoute = pathname.startsWith('/login');
 
@@ -41,25 +41,26 @@ export async function middleware(request: NextRequest) {
     },
   });
 
-  // Fetch the current user session
-  const { data: { session } } = await supabase.auth.getSession();
+  // IMPORTANT: use getUser(), not getSession() — getSession() reads the
+  // (possibly stale/forged) cookie without revalidating against Supabase.
+  // getUser() round-trips to Supabase Auth and is the only safe way to
+  // check auth state in middleware.
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-  // MOCK LOGIC: In production, uncomment the redirection logic below.
-  // For the scaffolding/preview phase, we allow access to easily demo pages.
-  /*
-  if (isDashboardRoute && !session) {
+  if (isDashboardRoute && !user) {
     const url = request.nextUrl.clone();
     url.pathname = '/login';
     url.searchParams.set('redirectTo', pathname);
     return NextResponse.redirect(url);
   }
 
-  if (isAuthRoute && session) {
+  if (isAuthRoute && user) {
     const url = request.nextUrl.clone();
     url.pathname = '/dashboard';
     return NextResponse.redirect(url);
   }
-  */
 
   return response;
 }
