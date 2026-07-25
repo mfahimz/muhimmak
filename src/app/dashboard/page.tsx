@@ -44,6 +44,7 @@ export default async function Page() {
   const role = (profile?.role || user.user_metadata?.role || "receptionist") as string
 
   const isReceptionist = role === "receptionist"
+  const canStartSession = role === "receptionist" || role === "super_admin" || role === "ceo"
 
   // Format role label using translation keys with fallback
   const formatRole = (roleKey: string) => {
@@ -278,6 +279,23 @@ export default async function Page() {
              FULL VIEW (ADMIN, CEO, AGM, MANAGER)
              ========================================================================= */
           <div className="space-y-6">
+            {canStartSession && (
+              <div className="rounded-2xl border border-indigo-200 bg-linear-to-br from-indigo-50/40 via-card to-card p-6 shadow-xs text-center md:text-start flex flex-col md:flex-row md:items-center md:justify-between gap-6 transition-all duration-300 hover:border-indigo-300 dark:border-indigo-900/40 dark:from-indigo-950/10 animate-fade-in">
+                <div className="space-y-1.5 text-start">
+                  <h3 className="text-lg font-bold tracking-tight text-indigo-900 dark:text-indigo-100">{t("startSessionButton")}</h3>
+                  <p className="text-sm text-muted-foreground max-w-xl">
+                    {t("startSessionDesc")}
+                  </p>
+                </div>
+                <Link href="/dashboard/sessions/new" className="shrink-0">
+                  <button className="flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-md transition-all duration-200 hover:bg-indigo-500 active:scale-98">
+                    <PlusIcon className="size-4" />
+                    <span>{t("startSessionButton")}</span>
+                  </button>
+                </Link>
+              </div>
+            )}
+
             {/* Stat Cards Grid (4 cards, facility-wide) */}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               {/* Sessions Today */}

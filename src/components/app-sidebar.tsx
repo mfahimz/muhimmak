@@ -85,7 +85,8 @@ export function AppSidebar({ user, ...props }: AppSidebarProps) {
     return ALL_NAV_ITEMS.filter((item) => item.roles.includes(user.role))
   }, [user.role])
 
-  const isReceptionist = user.role === "receptionist"
+  const canStartSession =
+    user.role === "receptionist" || user.role === "super_admin" || user.role === "ceo"
 
   return (
     <Sidebar collapsible="offcanvas" {...props}>
@@ -121,7 +122,7 @@ export function AppSidebar({ user, ...props }: AppSidebarProps) {
       </SidebarHeader>
 
       <SidebarContent>
-        {isReceptionist && (
+        {canStartSession && (
           <SidebarGroup className="pb-0 pt-4 px-3">
             <SidebarGroupContent>
               <Link href="/dashboard/sessions/new" className="w-full">
@@ -171,19 +172,6 @@ export function AppSidebar({ user, ...props }: AppSidebarProps) {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-
-        {isReceptionist && (
-          <SidebarGroup className="mt-auto px-4 py-4">
-            <SidebarGroupContent>
-              <Link href="/dashboard/sessions/new" className="w-full">
-                <button className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary py-2.5 text-xs font-semibold text-primary-foreground shadow-sm transition-all duration-200 hover:bg-primary/95 active:scale-98">
-                  <PlusIcon className="size-4" />
-                  <span>{t("btnStartSession")}</span>
-                </button>
-              </Link>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        )}
       </SidebarContent>
 
       <SidebarFooter className="border-t border-slate-200 p-2 flex flex-col gap-2">
