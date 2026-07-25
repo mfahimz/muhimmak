@@ -6,7 +6,13 @@ export type AuditAction =
   | 'login_failed_bad_pin'
   | 'login_failed_locked'
   | 'login_failed_inactive'
-  | 'logout';
+  | 'logout'
+  | 'session_expired'
+  | 'session_started'
+  | 'session_consent_given'
+  | 'session_consent_refused'
+  | 'session_completed'
+  | 'session_abandoned';
 
 interface AuditEntry {
   actorId: string | null;

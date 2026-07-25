@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
+import { writeAuditLog } from '@/lib/audit/log';
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -48,6 +49,57 @@ export async function proxy(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
+
+  if (user) {
+    const sessionStartCookie = request.cookies.get('muhimmak_session_start');
+    const sessionTimeoutMinutes = Number(process.env.SESSION_TIMEOUT_MINUTES ?? 720);
+    const sessionTimeoutMs = sessionTimeoutMinutes * 60 * 1000;
+    
+    let isExpired = false;
+    let elapsedTimeMs = 0;
+
+    if (!sessionStartCookie) {
+      isExpired = true;
+    } else {
+      const startTime = new Date(sessionStartCookie.value).getTime();
+      const now = Date.now();
+      elapsedTimeMs = now - startTime;
+      if (isNaN(startTime) || elapsedTimeMs > sessionTimeoutMs) {
+        isExpired = true;
+      }
+    }
+
+    if (isExpired) {
+      const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || request.headers.get('x-real-ip') || null;
+      await Promise.all([
+        supabase.auth.signOut(),
+        writeAuditLog({
+          actorId: user.id,
+          action: 'session_expired',
+          ipAddress: ip,
+          metadata: {
+            elapsedTimeMs,
+            sessionTimeoutMinutes,
+            reason: !sessionStartCookie ? 'missing_cookie' : 'timeout',
+          },
+        }),
+      ]);
+
+      const url = request.nextUrl.clone();
+      url.pathname = '/login';
+      url.searchParams.set('reason', 'session_expired');
+      const redirectResponse = NextResponse.redirect(url);
+
+      redirectResponse.cookies.delete('muhimmak_session_start');
+      request.cookies.getAll().forEach((cookie) => {
+        if (cookie.name.startsWith('sb-') || cookie.name === 'muhimmak_session_start') {
+          redirectResponse.cookies.delete(cookie.name);
+        }
+      });
+
+      return redirectResponse;
+    }
+  }
 
   if (isDashboardRoute && !user) {
     const url = request.nextUrl.clone();

@@ -1,0 +1,281 @@
+import 'server-only';
+import { createAdminClient } from '@/lib/supabase/admin';
+import { resend, RESEND_FROM } from '@/server/lib/resend';
+import { deepseek, DEEPSEEK_MODEL } from '@/server/lib/deepseek';
+import {
+  lowSatisfactionAlertEmail,
+  dailySummaryEmail,
+  weeklySummaryEmail,
+} from '@/server/lib/email-templates';
+
+async function generateEmailNarrative(
+  type: 'low_satisfaction_alert' | 'daily_summary' | 'weekly_summary',
+  data: Record<string, any>
+): Promise<string> {
+  const fallbacks: Record<string, string> = {
+    low_satisfaction_alert: `<p>A customer session has been flagged for low satisfaction. Please review the details below and follow up as appropriate.</p>`,
+    daily_summary: `<p>Here is your daily feedback summary for Al Maraghi. Review the metrics below for an overview of today's customer sessions.</p>`,
+    weekly_summary: `<p>Here is your weekly feedback summary for Al Maraghi. Review the metrics below for a comprehensive overview of this week's customer sessions.</p>`,
+  };
+
+  const prompts: Record<string, string> = {
+    low_satisfaction_alert: `You are writing a concise, professional email notification for Al Maraghi, a UAE automotive service facility. A customer feedback session scored ${data.score}% which is below the alert threshold of ${data.threshold}%. The form used was "${data.formName}". Write 2-3 sentences: acknowledge the low score urgently but professionally, suggest the team follow up with the customer if possible, and note the severity (${data.score < data.threshold * 0.5 ? 'critical — immediate action recommended' : 'concerning — review recommended'}). Write in English. Output only plain HTML paragraphs (<p> tags), no headings, no bullet points, no markdown.`,
+    
+    daily_summary: `You are writing a concise daily summary email for Al Maraghi, a UAE automotive service facility. Today's data: ${data.totalSessions} total sessions, ${data.completedSessions} completed, average score ${data.averageScore !== null ? data.averageScore + '%' : 'unavailable'}, ${data.lowScoreCount} low-score alerts. Write 2-3 sentences providing a professional narrative analysis of today's performance. If average score is high (above 70%), be positive. If low score count is high, flag concern. If no sessions, note the quiet day. Write in English. Output only plain HTML paragraphs (<p> tags), no headings, no bullet points, no markdown.`,
+    
+    weekly_summary: `You are writing a weekly performance summary email for Al Maraghi, a UAE automotive service facility. This week's data: ${data.totalSessions} total sessions, ${data.completedSessions} completed, average score ${data.averageScore !== null ? data.averageScore + '%' : 'unavailable'}, ${data.lowScoreCount} low-score alerts. Write 3-4 sentences providing a professional narrative analysis of the week's performance. Comment on the volume of feedback, satisfaction trend, and any concerns if low scores are high. If performance was strong, acknowledge it. Write in English. Output only plain HTML paragraphs (<p> tags), no headings, no bullet points, no markdown.`,
+  };
+
+  try {
+    if (!process.env.DEEPSEEK_API_KEY) throw new Error('No API key');
+    const completion = await deepseek.chat.completions.create({
+      model: DEEPSEEK_MODEL,
+      temperature: 0.5,
+      messages: [
+        { role: 'system', content: 'You write professional email copy for a UAE automotive service business. Output only clean HTML paragraphs. Never use markdown, bullet points, or headings.' },
+        { role: 'user', content: prompts[type] },
+      ],
+    });
+    const text = completion.choices?.[0]?.message?.content?.trim();
+    if (!text) throw new Error('Empty response');
+    return text;
+  } catch (err) {
+    console.error('[email] AI narrative generation failed, using fallback:', err);
+    return fallbacks[type];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Send low satisfaction alert
+// Called from sessions.service.ts after a session completes with low score
+// ---------------------------------------------------------------------------
+export async function sendLowSatisfactionAlert(data: {
+  sessionId: string;
+  score: number;
+  formName: string;
+}): Promise<void> {
+  try {
+    const admin = createAdminClient();
+
+    const { data: notifSetting } = await admin
+      .from('notification_settings')
+      .select('enabled, recipients, threshold_percent')
+      .eq('event_type', 'low_satisfaction_alert')
+      .single();
+
+    if (!notifSetting?.enabled) return;
+    if (!notifSetting.recipients?.length) return;
+    if (data.score >= (notifSetting.threshold_percent ?? 50)) return;
+
+    const narrativeHtml = await generateEmailNarrative('low_satisfaction_alert', {
+      score: data.score,
+      threshold: notifSetting.threshold_percent ?? 50,
+      formName: data.formName,
+    });
+
+    const { subject, html } = lowSatisfactionAlertEmail({
+      sessionId: data.sessionId,
+      score: data.score,
+      threshold: notifSetting.threshold_percent ?? 50,
+      formName: data.formName,
+      date: new Date().toLocaleDateString('en-AE', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
+      narrativeHtml,
+    });
+
+    await resend.emails.send({
+      from: RESEND_FROM,
+      to: notifSetting.recipients,
+      subject,
+      html,
+    });
+  } catch (err) {
+    console.error('[email] sendLowSatisfactionAlert failed:', err);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Send daily summary
+// Called by Vercel Cron at 7am UAE time (UTC+4 = 03:00 UTC)
+// ---------------------------------------------------------------------------
+export async function sendDailySummary(): Promise<void> {
+  try {
+    const admin = createAdminClient();
+
+    const { data: notifSetting } = await admin
+      .from('notification_settings')
+      .select('enabled, recipients')
+      .eq('event_type', 'daily_summary')
+      .single();
+
+    if (!notifSetting?.enabled) return;
+    if (!notifSetting.recipients?.length) return;
+
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const dateStr = yesterday.toISOString().split('T')[0];
+    const startOfDay = `${dateStr}T00:00:00.000Z`;
+    const endOfDay = `${dateStr}T23:59:59.999Z`;
+
+    const { data: sessions } = await admin
+      .from('sessions')
+      .select('id, status')
+      .gte('created_at', startOfDay)
+      .lte('created_at', endOfDay);
+
+    const total = sessions?.length ?? 0;
+    const completed = sessions?.filter((s) => s.status === 'completed').length ?? 0;
+
+    const { data: responses } = await admin
+      .from('responses')
+      .select('ai_text_score')
+      .in('session_id', (sessions ?? []).map((s) => s.id));
+
+    const scores = (responses ?? [])
+      .map((r) => r.ai_text_score)
+      .filter((s): s is number => s !== null);
+
+    const avgScore =
+      scores.length > 0
+        ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length)
+        : null;
+
+    const { data: alertSetting } = await admin
+      .from('notification_settings')
+      .select('threshold_percent')
+      .eq('event_type', 'low_satisfaction_alert')
+      .single();
+
+    const threshold = alertSetting?.threshold_percent ?? 50;
+    const lowScoreCount = scores.filter((s) => s < threshold).length;
+
+    const narrativeHtml = await generateEmailNarrative('daily_summary', {
+      totalSessions: total,
+      completedSessions: completed,
+      averageScore: avgScore,
+      lowScoreCount,
+      date: dateStr,
+    });
+
+    const { subject, html } = dailySummaryEmail({
+      date: yesterday.toLocaleDateString('en-AE', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+      }),
+      totalSessions: total,
+      completedSessions: completed,
+      averageScore: avgScore,
+      lowScoreCount,
+      narrativeHtml,
+    });
+
+    await resend.emails.send({
+      from: RESEND_FROM,
+      to: notifSetting.recipients,
+      subject,
+      html,
+    });
+  } catch (err) {
+    console.error('[email] sendDailySummary failed:', err);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Send weekly summary
+// Called by Vercel Cron every Monday at 7am UAE time (03:00 UTC)
+// ---------------------------------------------------------------------------
+export async function sendWeeklySummary(): Promise<void> {
+  try {
+    const admin = createAdminClient();
+
+    const { data: notifSetting } = await admin
+      .from('notification_settings')
+      .select('enabled, recipients')
+      .eq('event_type', 'weekly_summary')
+      .single();
+
+    if (!notifSetting?.enabled) return;
+    if (!notifSetting.recipients?.length) return;
+
+    const today = new Date();
+    const monday = new Date(today);
+    monday.setDate(today.getDate() - 7);
+    const sunday = new Date(today);
+    sunday.setDate(today.getDate() - 1);
+
+    const startStr = monday.toISOString().split('T')[0] + 'T00:00:00.000Z';
+    const endStr = sunday.toISOString().split('T')[0] + 'T23:59:59.999Z';
+
+    const { data: sessions } = await admin
+      .from('sessions')
+      .select('id, status')
+      .gte('created_at', startStr)
+      .lte('created_at', endStr);
+
+    const total = sessions?.length ?? 0;
+    const completed = sessions?.filter((s) => s.status === 'completed').length ?? 0;
+
+    const { data: responses } = await admin
+      .from('responses')
+      .select('ai_text_score')
+      .in('session_id', (sessions ?? []).map((s) => s.id));
+
+    const scores = (responses ?? [])
+      .map((r) => r.ai_text_score)
+      .filter((s): s is number => s !== null);
+
+    const avgScore =
+      scores.length > 0
+        ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length)
+        : null;
+
+    const { data: alertSetting } = await admin
+      .from('notification_settings')
+      .select('threshold_percent')
+      .eq('event_type', 'low_satisfaction_alert')
+      .single();
+
+    const threshold = alertSetting?.threshold_percent ?? 50;
+    const lowScoreCount = scores.filter((s) => s < threshold).length;
+
+    const formatDate = (d: Date) =>
+      d.toLocaleDateString('en-AE', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+      });
+
+    const narrativeHtml = await generateEmailNarrative('weekly_summary', {
+      totalSessions: total,
+      completedSessions: completed,
+      averageScore: avgScore,
+      lowScoreCount,
+    });
+
+    const { subject, html } = weeklySummaryEmail({
+      weekStart: formatDate(monday),
+      weekEnd: formatDate(sunday),
+      totalSessions: total,
+      completedSessions: completed,
+      averageScore: avgScore,
+      lowScoreCount,
+      narrativeHtml,
+    });
+
+    await resend.emails.send({
+      from: RESEND_FROM,
+      to: notifSetting.recipients,
+      subject,
+      html,
+    });
+  } catch (err) {
+    console.error('[email] sendWeeklySummary failed:', err);
+  }
+}

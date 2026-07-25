@@ -8,37 +8,11 @@ export interface UserProfile {
   createdAt: string;
 }
 
-export type FormFieldType =
-  | 'text'
-  | 'textarea'
-  | 'number'
-  | 'select'
-  | 'radio'
-  | 'checkbox'
-  | 'rating' // Star rating (1-5)
-  | 'emoji'; // Emoji feedback (e.g. Sad, Neutral, Happy)
-
-export interface FormFieldOption {
-  label: string;
-  value: string;
-}
-
-export interface FormField {
-  id: string;
-  type: FormFieldType;
-  label: string;
-  placeholder?: string;
-  required: boolean;
-  options?: FormFieldOption[]; // For select, radio, checkbox
-  minRating?: number; // For rating (default 1)
-  maxRating?: number; // For rating (default 5)
-}
-
 export interface Form {
   id: string;
   title: string;
   description?: string;
-  fields: FormField[];
+  fields: any[];
   isPublished: boolean;
   createdBy: string; // User ID
   createdAt: string;
@@ -63,7 +37,7 @@ export interface FormTemplate {
   title: string;
   description: string;
   category: string;
-  fields: FormField[];
+  fields: any[];
 }
 
 export interface DashboardStats {
