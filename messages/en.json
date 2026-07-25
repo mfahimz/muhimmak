@@ -305,7 +305,8 @@
       "revertToDraft": "Revert to draft",
       "staleWarning": "English version changed — retranslate or edit manually",
       "outdatedBadge": "outdated",
-      "missingSaveGuard": "All questions must have an Arabic translation before saving."
+      "missingSaveGuard": "All questions must have an Arabic translation before saving.",
+      "noQuestionsToTranslate": "Add questions first to translate them"
     },
     "conditionEditor": {
       "addCondition": "Add condition (optional)",

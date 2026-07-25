@@ -511,6 +511,7 @@ export function FormBuilder({
 
   // Translation handlers
   const handleTranslateAll = async () => {
+    if (fields.length === 0) return
     setIsTranslating(true)
     try {
       const response = await fetch("/api/v1/forms/translate", {
@@ -1275,22 +1276,29 @@ export function FormBuilder({
           {/* Panel Header */}
           <div className="flex items-center justify-between">
             <h2 className="text-slate-700 dark:text-slate-300 font-medium">{tAI("arabicPanel.title")}</h2>
-            <button
-              type="button"
-              onClick={handleTranslateAll}
-              disabled={isTranslating}
-              className="border border-indigo-500 text-indigo-600 text-sm px-3 py-1.5 rounded-md hover:bg-indigo-50 dark:hover:bg-indigo-950/20 disabled:opacity-50 transition-colors"
-            >
-              {isTranslating ? (
-                <span className="flex items-center gap-1.5">
-                  <svg className="animate-spin size-3.5" viewBox="0 0 24 24" fill="none">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                  </svg>
-                  {tAI("arabicPanel.translating")}
+            <div className="flex items-center gap-3">
+              {fields.length === 0 && (
+                <span className="text-xs text-slate-400 dark:text-slate-500">
+                  {tAI("arabicPanel.noQuestionsToTranslate")}
                 </span>
-              ) : <>{tAI("arabicPanel.translateAll")} ✦</>}
-            </button>
+              )}
+              <button
+                type="button"
+                onClick={handleTranslateAll}
+                disabled={isTranslating || fields.length === 0}
+                className="border border-indigo-500 text-indigo-600 text-sm px-3 py-1.5 rounded-md hover:bg-indigo-50 dark:hover:bg-indigo-950/20 disabled:opacity-50 transition-colors"
+              >
+                {isTranslating ? (
+                  <span className="flex items-center gap-1.5">
+                    <svg className="animate-spin size-3.5" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    {tAI("arabicPanel.translating")}
+                  </span>
+                ) : <>{tAI("arabicPanel.translateAll")} ✦</>}
+              </button>
+            </div>
           </div>
 
           {/* Form Name (Arabic) */}
