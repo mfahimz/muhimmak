@@ -50,8 +50,8 @@ function computeWeightedScore(
         textTotalWeight += f.weight || 0;
       }
       weightedSum += (questionNormalizedScore * (f.weight || 0)) / 100;
+      totalWeightAssigned += f.weight || 0;
     }
-    totalWeightAssigned += f.weight || 0;
   });
 
   const finalScore =

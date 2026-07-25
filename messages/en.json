@@ -233,6 +233,7 @@
     "startButton": "Start Session",
     "startingButton": "Starting...",
     "errorSelectForm": "Please select a form",
+    "errorArabicNotAvailable": "This form is not available in Arabic. Please select English to continue.",
     "errorStartFailed": "Failed to start session",
     "successStarted": "Session started successfully!",
     "errorLoading": "Failed to load sessions data.",

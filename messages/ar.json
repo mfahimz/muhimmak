@@ -233,6 +233,7 @@
     "startButton": "بدء الجلسة",
     "startingButton": "جارٍ البدء...",
     "errorSelectForm": "يرجى اختيار نموذج",
+    "errorArabicNotAvailable": "هذه النموذج غير متوفر باللغة العربية. يرجى اختيار اللغة الإنجليزية للمتابعة.",
     "errorStartFailed": "فشل بدء الجلسة",
     "successStarted": "تم بدء الجلسة بنجاح!",
     "errorLoading": "فشل تحميل بيانات الجلسات.",

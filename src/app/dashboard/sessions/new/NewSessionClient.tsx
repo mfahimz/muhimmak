@@ -17,6 +17,7 @@ export interface FormItem {
   description: string
   status: string
   type: string
+  hasArabicTranslation: boolean
 }
 
 interface NewSessionClientProps {
@@ -34,6 +35,9 @@ export function NewSessionClient({ activeForms, locationId, defaultFormId }: New
   const [plateNumber, setPlateNumber] = React.useState("")
   const [loading, setLoading] = React.useState(false)
 
+  const selectedForm = activeForms.find(f => f.id === selectedFormId)
+  const isArabicBlocked = Boolean(selectedLanguage === 'ar' && selectedForm && !selectedForm.hasArabicTranslation)
+
   // Pre-select form based on defaultFormId if available and active, or auto-select first form if only one is available
   React.useEffect(() => {
     if (defaultFormId && activeForms.some((form) => form.id === defaultFormId)) {
@@ -45,6 +49,10 @@ export function NewSessionClient({ activeForms, locationId, defaultFormId }: New
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (isArabicBlocked) {
+      toast.error(t("errorArabicNotAvailable"))
+      return
+    }
     if (!selectedFormId) {
       toast.error(t("errorSelectForm"))
       return
@@ -139,6 +147,11 @@ export function NewSessionClient({ activeForms, locationId, defaultFormId }: New
                 <span className="text-[10px] text-slate-400">{t("languageArabicDesc")}</span>
               </Card>
             </div>
+            {isArabicBlocked && (
+              <p className="text-sm text-rose-600 mt-2 font-medium">
+                {t("errorArabicNotAvailable")}
+              </p>
+            )}
           </div>
 
           {/* Plate number option (plaintext) */}
@@ -174,7 +187,7 @@ export function NewSessionClient({ activeForms, locationId, defaultFormId }: New
         </Button>
         <Button
           type="submit"
-          disabled={loading || !selectedFormId || activeForms.length === 0}
+          disabled={loading || !selectedFormId || activeForms.length === 0 || isArabicBlocked}
           className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold shadow-xs flex items-center gap-1.5 h-10 px-6 rounded-xl"
         >
           {loading ? t("startingButton") : t("startButton")}

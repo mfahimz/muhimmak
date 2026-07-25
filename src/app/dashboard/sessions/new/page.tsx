@@ -36,11 +36,27 @@ export default async function NewSessionPage() {
   // Fetch only active forms
   const { data: formsData } = await supabase
     .from("forms")
-    .select("id, name, description, status, type")
+    .select("id, name, description, name_ar, status, type, fields")
     .eq("status", "active")
     .order("updated_at", { ascending: false })
 
-  const activeForms = formsData || []
+  const activeForms = (formsData || []).map((form) => {
+    const hasNameAr = typeof form.name_ar === 'string' && form.name_ar.trim() !== ''
+    const fieldsArr = Array.isArray(form.fields) ? form.fields : []
+    const hasFields = fieldsArr.length > 0
+    const allFieldsTranslated = hasFields && fieldsArr.every((f: any) =>
+      f.ar && typeof f.ar.label === 'string' && f.ar.label.trim() !== ''
+    )
+
+    return {
+      id: form.id,
+      name: form.name,
+      description: form.description,
+      status: form.status,
+      type: form.type,
+      hasArabicTranslation: hasNameAr && allFieldsTranslated,
+    }
+  })
 
   // Fetch facility settings to get default_form_id
   const { data: facilitySettings } = await supabase
