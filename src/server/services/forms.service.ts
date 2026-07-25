@@ -409,3 +409,130 @@ export async function translateForm(request: Request): Promise<NextResponse> {
     return NextResponse.json({ error: err.message || err }, { status: 500 });
   }
 }
+
+// ---------------------------------------------------------------------------
+// suggestBranching — AI suggest branching conditions for form questions
+// ---------------------------------------------------------------------------
+export async function suggestBranching(request: Request): Promise<NextResponse> {
+  try {
+    const auth = await authorizeFormAdmin();
+    if (!auth.authorized) return auth.response;
+
+    const body = await request.json();
+    const { questions } = body;
+
+    if (!Array.isArray(questions) || questions.length <= 1) {
+      return NextResponse.json(
+        { error: 'Questions must be an array with at least 2 questions' },
+        { status: 400 }
+      );
+    }
+
+    if (!process.env.DEEPSEEK_API_KEY) {
+      return NextResponse.json({ error: 'DeepSeek API Key is not configured' }, { status: 500 });
+    }
+
+    const possibleSources = questions.filter(
+      (q: any) => q.type === 'multiple_choice' || q.type === 'star_rating'
+    );
+
+    if (possibleSources.length === 0) {
+      return NextResponse.json({ suggestions: [] });
+    }
+
+    const systemPrompt = 'You are a database and API server that only returns raw JSON objects.';
+
+    const userPrompt = `You are an expert survey designer for Al Maraghi, a UAE automotive service facility.
+Analyze the following ordered list of feedback questions:
+${JSON.stringify(questions, null, 2)}
+
+Only these questions are valid condition sources (multiple_choice or star_rating):
+${JSON.stringify(possibleSources, null, 2)}
+
+Task:
+- For each question that is NOT the first question, suggest whether it should have a branch condition based on an earlier question in the list.
+- Only suggest a condition if it makes clear practical sense for a UAE automotive service feedback context (e.g. a low star rating leading to a follow-up "what went wrong" question, or a specific multiple choice answer leading to a more specific question).
+- Not every question needs a condition — most should have none.
+- A condition can only reference a question earlier in the list, never itself or a later question.
+- For multiple_choice source questions: operator must be "equals" or "not_equals", and value must be one of that question's exact option strings.
+- For star_rating source questions: operator must be "lte" or "gte", and value must be an integer from 1 to 5.
+- Return ONLY questions that should have a suggested condition — omit questions that should stay unconditional.
+
+Return ONLY a raw JSON object matching this schema exactly. Do NOT wrap it in markdown formatting (like \`\`\`json) and do NOT include any explanation or extra text.
+
+Schema:
+{
+  "suggestions": [
+    {
+      "fieldId": "the id of the question that should be conditional",
+      "condition": {
+        "fieldId": "the id of the earlier source question",
+        "operator": "equals" | "not_equals" | "lte" | "gte",
+        "value": "string or number matching the source question's type"
+      },
+      "reasoning": "one short sentence explaining why in plain language"
+    }
+  ]
+}`;
+
+    let resultText: string;
+    try {
+      resultText = await callDeepSeekWithRetry(systemPrompt, userPrompt, 0.2);
+    } catch {
+      return NextResponse.json({ error: 'AI service unavailable, please try again' }, { status: 502 });
+    }
+
+    let parsed;
+    try {
+      parsed = JSON.parse(resultText.trim().replace(/^```json\s*|```$/g, '').trim());
+    } catch (parseErr) {
+      console.error('Failed to parse DeepSeek output:', resultText, parseErr);
+      return NextResponse.json({ error: 'DeepSeek returned malformed JSON' }, { status: 502 });
+    }
+
+    const validSuggestions = [];
+    if (parsed && Array.isArray(parsed.suggestions)) {
+      for (const item of parsed.suggestions) {
+        if (!item || typeof item !== 'object') continue;
+        const { fieldId, condition, reasoning } = item;
+        if (!fieldId || !condition || typeof condition !== 'object') continue;
+
+        const targetIdx = questions.findIndex((q: any) => q.id === fieldId);
+        if (targetIdx <= 0) continue; // Target question must exist and not be the first question
+
+        const sourceQ = questions.find((q: any) => q.id === condition.fieldId);
+        if (!sourceQ) continue;
+
+        const sourceIdx = questions.findIndex((q: any) => q.id === condition.fieldId);
+        if (sourceIdx < 0 || sourceIdx >= targetIdx) continue; // Source must appear earlier
+
+        if (sourceQ.type !== 'multiple_choice' && sourceQ.type !== 'star_rating') continue;
+
+        if (sourceQ.type === 'multiple_choice') {
+          if (condition.operator !== 'equals' && condition.operator !== 'not_equals') continue;
+          if (!Array.isArray(sourceQ.options) || !sourceQ.options.includes(String(condition.value))) continue;
+        } else if (sourceQ.type === 'star_rating') {
+          if (condition.operator !== 'lte' && condition.operator !== 'gte') continue;
+          const numVal = Number(condition.value);
+          if (!Number.isInteger(numVal) || numVal < 1 || numVal > 5) continue;
+          condition.value = numVal;
+        }
+
+        validSuggestions.push({
+          fieldId,
+          condition: {
+            fieldId: condition.fieldId,
+            operator: condition.operator,
+            value: condition.value,
+          },
+          reasoning: typeof reasoning === 'string' ? reasoning : '',
+        });
+      }
+    }
+
+    return NextResponse.json({ suggestions: validSuggestions });
+  } catch (err: any) {
+    console.error('suggestBranching error:', err);
+    return NextResponse.json({ error: err.message || err }, { status: 500 });
+  }
+}

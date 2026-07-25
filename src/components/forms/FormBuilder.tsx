@@ -72,6 +72,7 @@ export function FormBuilder({
   
   const [isSuggestingNext, setIsSuggestingNext] = React.useState(false)
   const [aiSuggestNextError, setAiSuggestNextError] = React.useState<string | null>(null)
+  const [isSuggestingBranching, setIsSuggestingBranching] = React.useState(false)
 
   // Bilingual (Arabic) states
   const [activeTab, setActiveTab] = React.useState<'en' | 'ar'>('en')
@@ -464,6 +465,50 @@ export function FormBuilder({
     }
   }
 
+  // AI Assistant — Suggest Branching Logic
+  const handleSuggestBranching = async () => {
+    if (fields.length <= 1) return
+    setIsSuggestingBranching(true)
+    try {
+      const response = await fetch("/api/v1/forms/suggest-branching", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          questions: fields.map(f => ({
+            id: f.id,
+            order: f.order,
+            type: f.type,
+            label: f.label,
+            options: f.options,
+          })),
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error("Suggest branching failed")
+      }
+
+      const data = await response.json()
+      if (Array.isArray(data.suggestions)) {
+        setFields(prev => {
+          const next = [...prev]
+          data.suggestions.forEach((sug: any) => {
+            if (!sug.fieldId || !sug.condition) return
+            const idx = next.findIndex(f => f.id === sug.fieldId)
+            if (idx !== -1 && !next[idx].dependsOn) {
+              next[idx] = { ...next[idx], dependsOn: sug.condition }
+            }
+          })
+          return next
+        })
+      }
+    } catch (err) {
+      console.error("handleSuggestBranching error:", err)
+    } finally {
+      setIsSuggestingBranching(false)
+    }
+  }
+
   // Translation handlers
   const handleTranslateAll = async () => {
     setIsTranslating(true)
@@ -683,6 +728,23 @@ export function FormBuilder({
                 </span>
               )}
             </div>
+          )}
+
+          {fields.length > 1 && (
+            <Button
+              type="button"
+              onClick={handleSuggestBranching}
+              disabled={isSuggestingBranching}
+              variant="outline"
+              className="flex items-center gap-1.5 border-indigo-200 text-indigo-600 hover:bg-indigo-50/50 hover:text-indigo-700 dark:border-indigo-900/50 dark:text-indigo-400 dark:hover:bg-indigo-950/20 disabled:opacity-50"
+            >
+              <GitBranch className={`size-4 ${isSuggestingBranching ? "animate-spin" : ""}`} />
+              <span>
+                {isSuggestingBranching
+                  ? tAI("conditionEditor.suggestingBranching")
+                  : tAI("conditionEditor.suggestBranching")}
+              </span>
+            </Button>
           )}
 
           <Button

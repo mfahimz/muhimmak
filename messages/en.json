@@ -318,7 +318,9 @@
       "operatorNotEquals": "not equals",
       "operatorLte": "at most (≤)",
       "operatorGte": "at least (≥)",
-      "reorderWarning": "Option order changed — Arabic options were reordered automatically. Please review the Arabic tab."
+      "reorderWarning": "Option order changed — Arabic options were reordered automatically. Please review the Arabic tab.",
+      "suggestBranching": "Suggest branching logic",
+      "suggestingBranching": "Analyzing questions..."
     }
   },
   "Survey": {

@@ -15,7 +15,11 @@ export interface SurveyField {
   label: string
   required: boolean
   options: string[]
-  dependsOn: null | any
+  dependsOn?: {
+    fieldId: string
+    operator: 'equals' | 'not_equals' | 'lte' | 'gte'
+    value: string | number
+  } | null
   weight?: number
   optionScores?: number[]
   ar?: { label: string; options: string[] }
@@ -44,6 +48,25 @@ interface SurveyClientProps {
   }
 }
 
+function isFieldVisible(field: SurveyField, answers: Record<string, any>): boolean {
+  if (!field.dependsOn) return true
+  const sourceAnswer = answers[field.dependsOn.fieldId]
+  if (sourceAnswer === undefined) return false
+
+  switch (field.dependsOn.operator) {
+    case 'equals':
+      return sourceAnswer === field.dependsOn.value
+    case 'not_equals':
+      return sourceAnswer !== field.dependsOn.value
+    case 'lte':
+      return typeof sourceAnswer === 'number' && sourceAnswer <= (field.dependsOn.value as number)
+    case 'gte':
+      return typeof sourceAnswer === 'number' && sourceAnswer >= (field.dependsOn.value as number)
+    default:
+      return true
+  }
+}
+
 export function SurveyClient({ session, form, facilitySettings }: SurveyClientProps) {
   const router = useRouter()
   const t = useTranslations("Survey")
@@ -68,6 +91,10 @@ export function SurveyClient({ session, form, facilitySettings }: SurveyClientPr
   const [textVal, setTextVal] = React.useState("")
   const [submitting, setSubmitting] = React.useState(false)
   const [showQr, setShowQr] = React.useState(false)
+
+  const visibleFields = React.useMemo(() => {
+    return fields.filter(f => isFieldVisible(f, answers))
+  }, [fields, answers])
 
   // AI text scoring states
   const [textScores, setTextScores] = React.useState<Record<string, number>>({})
@@ -211,7 +238,7 @@ export function SurveyClient({ session, form, facilitySettings }: SurveyClientPr
 
   // Answer handlers
   const handleAnswer = (val: any, autoAdvance = true) => {
-    const currentField = fields[currentFieldIdx]
+    const currentField = visibleFields[currentFieldIdx]
     setAnswers(prev => ({ ...prev, [currentField.id]: val }))
 
     // Trigger AI text scoring if field type is text and answer is non-empty
@@ -258,13 +285,15 @@ export function SurveyClient({ session, form, facilitySettings }: SurveyClientPr
     }
 
     if (autoAdvance) {
-      if (currentFieldIdx < fields.length - 1) {
+      const updatedAnswers = { ...answers, [currentField.id]: val }
+      const nextVisibleFields = fields.filter(f => isFieldVisible(f, updatedAnswers))
+      const isLastVisible = currentFieldIdx >= nextVisibleFields.length - 1
+
+      if (!isLastVisible) {
         setTextVal("")
         setCurrentFieldIdx(prev => prev + 1)
       } else {
-        // Submit immediately since it is the last question
-        const finalAnswers = { ...answers, [currentField.id]: val }
-        handleSubmitSurvey(finalAnswers)
+        handleSubmitSurvey(updatedAnswers)
       }
     }
   }
@@ -275,7 +304,7 @@ export function SurveyClient({ session, form, facilitySettings }: SurveyClientPr
 
   const handleBack = () => {
     if (currentFieldIdx > 0) {
-      const prevField = fields[currentFieldIdx - 1]
+      const prevField = visibleFields[currentFieldIdx - 1]
       setTextVal(answers[prevField.id] || "")
       setCurrentFieldIdx(prev => prev - 1)
     }
@@ -536,15 +565,17 @@ export function SurveyClient({ session, form, facilitySettings }: SurveyClientPr
   }
 
   // Standard Form rendering
-  const currentField = fields[currentFieldIdx]
-  const progressPercent = Math.round(((currentFieldIdx) / fields.length) * 100)
+  const currentField = visibleFields[currentFieldIdx]
+  const progressPercent = visibleFields.length > 0
+    ? Math.round((currentFieldIdx / visibleFields.length) * 100)
+    : 0
 
   return (
     <div className="flex-1 flex flex-col justify-between p-4 md:p-8 max-w-4xl mx-auto w-full animate-fade-in">
       {/* Progress Bar & Header */}
       <div className="space-y-3">
         <div className="flex items-center justify-between text-xs font-semibold text-slate-500">
-          <span>{t("questionCounter", { current: currentFieldIdx + 1, total: fields.length })}</span>
+          <span>{t("questionCounter", { current: currentFieldIdx + 1, total: visibleFields.length })}</span>
           <span className="tabular-nums">{t("progressLabel", { percent: progressPercent })}</span>
         </div>
         <div className="h-1.5 w-full bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
