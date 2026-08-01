@@ -12,7 +12,16 @@ export type AuditAction =
   | 'session_consent_given'
   | 'session_consent_refused'
   | 'session_completed'
-  | 'session_abandoned';
+  | 'session_abandoned'
+  | 'user_created'
+  | 'user_updated'
+  | 'user_deactivated'
+  | 'user_reactivated'
+  | 'user_pin_reset'
+  | 'closure_marked_delivered'
+  | 'closure_marked_still_in_shop'
+  | 'closure_updated'
+  | 'closure_deleted';
 
 interface AuditEntry {
   actorId: string | null;

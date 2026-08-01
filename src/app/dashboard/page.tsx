@@ -2,19 +2,21 @@ import { createClient as createServerClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { redirect } from "next/navigation"
 import { SiteHeader } from "@/components/site-header"
-import { getTranslations } from "next-intl/server"
+import { getLocale, getTranslations } from "next-intl/server"
+import { toArabicNumerals } from "@/lib/utils/arabic-numerals"
 import {
-  ActivityIcon,
-  StarIcon,
   BanIcon,
   PlusIcon,
   SparklesIcon,
-  CheckCircle2Icon,
   CalendarCheckIcon,
   AwardIcon,
+  StarIcon,
   UserCheck2Icon,
 } from "lucide-react"
 import Link from "next/link"
+import { computeReceptionistImpact } from "@/server/services/sessions.service"
+import ReceptionistImpactCard from "@/components/dashboard/ReceptionistImpactCard"
+import ReceptionistImpactSelector from "@/components/dashboard/ReceptionistImpactSelector"
 
 export default async function Page() {
   const supabase = await createServerClient()
@@ -28,6 +30,7 @@ export default async function Page() {
   }
 
   // Fetch translations on server side
+  const locale = await getLocale()
   const t = await getTranslations("Dashboard")
   const tRoles = await getTranslations("Roles")
   const tHeader = await getTranslations("Header")
@@ -44,19 +47,18 @@ export default async function Page() {
   const role = (profile?.role || user.user_metadata?.role || "receptionist") as string
 
   const isReceptionist = role === "receptionist"
-  const canStartSession = role === "receptionist" || role === "super_admin" || role === "ceo"
+  const isSuperAdminOrCeo = role === "super_admin" || role === "ceo"
+  const canStartSession = role === "receptionist" || isSuperAdminOrCeo
 
   // Format role label using translation keys with fallback
   const formatRole = (roleKey: string) => {
     return tRoles.has(roleKey) ? tRoles(roleKey) : roleKey.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
   }
 
-  // ─── Query Metrics by Role ───────────────────────────────────────────────
-  let receptionistMetrics = {
-    started: "0" as string | number,
-    completed: "0" as string | number,
-    refused: "0" as string | number,
-  }
+  // ─── Query Metrics / Stats ───────────────────────────────────────────────
+  let receptionistImpact = null
+  let receptionistsList: { id: string; full_name: string }[] = []
+
   let fullMetrics = {
     sessionsToday: "0" as string | number,
     refusalsToday: "0" as string | number,
@@ -70,41 +72,10 @@ export default async function Page() {
   const startOfTodayISO = startOfToday.toISOString()
 
   if (isReceptionist) {
-    // Receptionist view metrics are strictly scoped to their own sessions
-    try {
-      const { count: started, error: startedError } = await supabase
-        .from("sessions")
-        .select("id", { count: "exact", head: true })
-        .eq("created_by", user.id)
-        .eq("status", "started")
-
-      const { count: completed, error: completedError } = await supabase
-        .from("sessions")
-        .select("id", { count: "exact", head: true })
-        .eq("created_by", user.id)
-        .eq("status", "completed")
-
-      const { count: refused, error: refusedError } = await supabase
-        .from("sessions")
-        .select("id", { count: "exact", head: true })
-        .eq("created_by", user.id)
-        .eq("status", "refused")
-
-      receptionistMetrics = {
-        started: startedError ? t("unableToLoad") : (started ?? 0),
-        completed: completedError ? t("unableToLoad") : (completed ?? 0),
-        refused: refusedError ? t("unableToLoad") : (refused ?? 0),
-      }
-    } catch (err) {
-      console.error("Failed to query receptionist metrics:", err)
-      receptionistMetrics = {
-        started: t("unableToLoad"),
-        completed: t("unableToLoad"),
-        refused: t("unableToLoad"),
-      }
-    }
+    // Compute server-side receptionist impact stats
+    receptionistImpact = await computeReceptionistImpact(user.id)
   } else {
-    // Full view metrics are facility-wide (super_admin, ceo, agm, manager)
+    // Full view metrics for facility-wide management
     try {
       const { count: sessionsToday, error: sError } = await supabase
         .from("sessions")
@@ -120,7 +91,6 @@ export default async function Page() {
       fullMetrics.sessionsToday = sError ? t("unableToLoad") : (sessionsToday ?? 0)
       fullMetrics.refusalsToday = rError ? t("unableToLoad") : (refusalsToday ?? 0)
 
-      // TODO: Compute average and total scores from JSONB answers column in responses table once schema is finalized
       fullMetrics.totalFeedback = "—"
       fullMetrics.avgScore = "—"
 
@@ -150,6 +120,19 @@ export default async function Page() {
           receptionist: item.name,
           sessionsCount: item.count,
           avgScore: "—",
+        }))
+      }
+
+      // If user is super_admin or ceo, fetch receptionists list for dropdown selector
+      if (isSuperAdminOrCeo) {
+        const { data: staffData } = await admin
+          .from("staff_directory")
+          .select("id, full_name, role")
+          .eq("role", "receptionist")
+
+        receptionistsList = (staffData || []).map((s) => ({
+          id: s.id,
+          full_name: s.full_name || t("unknownStaff"),
         }))
       }
     } catch (err) {
@@ -188,7 +171,7 @@ export default async function Page() {
         {/* ─── CONDITIONAL RENDERING BY ROLE ─────────────────────────────────────── */}
         {isReceptionist ? (
           /* =========================================================================
-             RECEPTIONIST VIEW
+             RECEPTIONIST VIEW (IMPACT DASHBOARD)
              ========================================================================= */
           <div className="space-y-6">
             {/* Top Prominent Action Card */}
@@ -200,79 +183,17 @@ export default async function Page() {
                 </p>
               </div>
               <Link href="/dashboard/sessions/new" className="shrink-0">
-                <button className="flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-md transition-all duration-200 hover:bg-indigo-500 active:scale-98">
+                <button className="flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-md transition-all duration-200 hover:bg-indigo-500 active:scale-98 cursor-pointer">
                   <PlusIcon className="size-4" />
                   <span>{t("startSessionButton")}</span>
                 </button>
               </Link>
             </div>
 
-            {/* Stat Cards Grid (3 cards only, own scope) */}
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-              {/* Sessions Started */}
-              <div className="group relative rounded-xl border border-border bg-card p-5 shadow-xs transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-semibold tracking-wide text-muted-foreground">{t("metrics.sessionsStarted")}</span>
-                  <div className="flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-colors duration-300">
-                    <ActivityIcon className="size-5" />
-                  </div>
-                </div>
-                <div className="mt-4 text-start">
-                  <h3 className="text-3xl font-bold tracking-tight tabular-nums text-foreground">
-                    {receptionistMetrics.started}
-                  </h3>
-                  <p className="text-xs text-muted-foreground mt-1">{t("metrics.sessionsStartedSub")}</p>
-                </div>
-              </div>
-
-              {/* Sessions Completed */}
-              <div className="group relative rounded-xl border border-border bg-card p-5 shadow-xs transition-all duration-300 hover:-translate-y-0.5 hover:border-success/30 hover:shadow-md">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-semibold tracking-wide text-muted-foreground">{t("metrics.sessionsCompleted")}</span>
-                  <div className="flex size-9 items-center justify-center rounded-lg bg-success/10 text-success group-hover:bg-success group-hover:text-success-foreground transition-colors duration-300">
-                    <CheckCircle2Icon className="size-5" />
-                  </div>
-                </div>
-                <div className="mt-4 text-start">
-                  <h3 className="text-3xl font-bold tracking-tight tabular-nums text-foreground">
-                    {receptionistMetrics.completed}
-                  </h3>
-                  <p className="text-xs text-muted-foreground mt-1">{t("metrics.sessionsCompletedSub")}</p>
-                </div>
-              </div>
-
-              {/* Sessions Refused */}
-              <div className="group relative rounded-xl border border-border bg-card p-5 shadow-xs transition-all duration-300 hover:-translate-y-0.5 hover:border-danger/30 hover:shadow-md">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-semibold tracking-wide text-muted-foreground">{t("metrics.sessionsRefused")}</span>
-                  <div className="flex size-9 items-center justify-center rounded-lg bg-danger/10 text-danger group-hover:bg-danger group-hover:text-danger-foreground transition-colors duration-300">
-                    <BanIcon className="size-5" />
-                  </div>
-                </div>
-                <div className="mt-4 text-start">
-                  <h3 className="text-3xl font-bold tracking-tight tabular-nums text-foreground">
-                    {receptionistMetrics.refused}
-                  </h3>
-                  <p className="text-xs text-muted-foreground mt-1">{t("metrics.sessionsRefusedSub")}</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Prominent Action Card */}
-            <div className="rounded-2xl border border-primary/20 bg-linear-to-br from-primary/5 via-card to-card p-8 shadow-xs text-center md:text-start flex flex-col md:flex-row md:items-center md:justify-between gap-6 transition-all duration-300 hover:border-primary/40">
-              <div className="space-y-2 text-start">
-                <h3 className="text-lg font-bold tracking-tight text-foreground">{t("readyToReceive")}</h3>
-                <p className="text-sm text-muted-foreground max-w-xl">
-                  {t("readySubtitle")}
-                </p>
-              </div>
-              <Link href="/dashboard/sessions/new" className="shrink-0">
-                <button className="flex items-center justify-center gap-2 rounded-xl bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground shadow-md transition-all duration-200 hover:bg-primary/95 active:scale-98">
-                  <PlusIcon className="size-4" />
-                  <span>{t("btnStartSession")}</span>
-                </button>
-              </Link>
-            </div>
+            {/* Receptionist Impact Card View */}
+            {receptionistImpact && (
+              <ReceptionistImpactCard data={receptionistImpact} staffName={fullName} />
+            )}
           </div>
         ) : (
           /* =========================================================================
@@ -288,12 +209,17 @@ export default async function Page() {
                   </p>
                 </div>
                 <Link href="/dashboard/sessions/new" className="shrink-0">
-                  <button className="flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-md transition-all duration-200 hover:bg-indigo-500 active:scale-98">
+                  <button className="flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-md transition-all duration-200 hover:bg-indigo-500 active:scale-98 cursor-pointer">
                     <PlusIcon className="size-4" />
                     <span>{t("startSessionButton")}</span>
                   </button>
                 </Link>
               </div>
+            )}
+
+            {/* Dropdown Selector for super_admin and ceo */}
+            {isSuperAdminOrCeo && (
+              <ReceptionistImpactSelector receptionists={receptionistsList} />
             )}
 
             {/* Stat Cards Grid (4 cards, facility-wide) */}
@@ -308,7 +234,7 @@ export default async function Page() {
                 </div>
                 <div className="mt-4 text-start">
                   <h3 className="text-3xl font-bold tracking-tight tabular-nums text-foreground">
-                    {fullMetrics.sessionsToday}
+                    {toArabicNumerals(fullMetrics.sessionsToday, locale)}
                   </h3>
                   <p className="text-xs text-muted-foreground mt-1">{t("metrics.sessionsTodaySub")}</p>
                 </div>
@@ -324,7 +250,7 @@ export default async function Page() {
                 </div>
                 <div className="mt-4 text-start">
                   <h3 className="text-3xl font-bold tracking-tight tabular-nums text-foreground">
-                    {fullMetrics.refusalsToday}
+                    {toArabicNumerals(fullMetrics.refusalsToday, locale)}
                   </h3>
                   <p className="text-xs text-muted-foreground mt-1">{t("metrics.refusalsTodaySub")}</p>
                 </div>
@@ -340,7 +266,7 @@ export default async function Page() {
                 </div>
                 <div className="mt-4 text-start">
                   <h3 className="text-3xl font-bold tracking-tight tabular-nums text-foreground">
-                    {fullMetrics.totalFeedback}
+                    {toArabicNumerals(fullMetrics.totalFeedback, locale)}
                   </h3>
                   <p className="text-xs text-muted-foreground mt-1">{t("metrics.totalFeedbackSub")}</p>
                 </div>
@@ -356,7 +282,7 @@ export default async function Page() {
                 </div>
                 <div className="mt-4 text-start">
                   <h3 className="text-3xl font-bold tracking-tight tabular-nums text-foreground">
-                    {fullMetrics.avgScore}
+                    {toArabicNumerals(fullMetrics.avgScore, locale)}
                   </h3>
                   <p className="text-xs text-muted-foreground mt-1">{t("metrics.avgScoreSub")}</p>
                 </div>
@@ -410,7 +336,7 @@ export default async function Page() {
                             {row.receptionist}
                           </td>
                           <td className="px-6 py-4 text-center tabular-nums text-muted-foreground">
-                            {row.sessionsCount}
+                            {toArabicNumerals(row.sessionsCount, locale)}
                           </td>
                           <td className="px-6 py-4 text-end tabular-nums font-semibold text-success">
                             {row.avgScore}
@@ -428,3 +354,4 @@ export default async function Page() {
     </>
   )
 }
+

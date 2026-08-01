@@ -2,6 +2,7 @@ import { Inter, IBM_Plex_Sans_Arabic } from "next/font/google";
 import NextTopLoader from "nextjs-toploader";
 import { getLocale, getMessages, getTranslations } from "next-intl/server";
 import { NextIntlClientProvider } from "next-intl";
+import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
 
 const inter = Inter({
@@ -46,8 +47,10 @@ export default async function RootLayout({
         <NextIntlClientProvider messages={messages} locale={locale}>
           {children}
         </NextIntlClientProvider>
+        <Toaster position="top-right" richColors />
       </body>
     </html>
   );
 }
+
 

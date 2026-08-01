@@ -209,7 +209,17 @@ export async function POST(request: Request) {
 
 - **RLS Enactment**: Row Level Security (RLS) must be enabled on every table.
 - **Permission Checking**: Security policies should call `has_permission(resource_id, action)` rather than hardcoding role strings.
-- **Service Role Grants**: Ensure explicit `GRANT` statements are assigned to `service_role`.
+- **Mandatory Table Grants**: Every migration that creates or alters a table must end with this mandatory footer:
+  ```sql
+  alter table public.<table_name> enable row level security;
+  grant select, insert, update, delete on public.<table_name> to authenticated;
+  grant all on public.<table_name> to service_role;
+  ```
+  This applies to **BOTH** `authenticated` and `service_role` — not `service_role` alone. If a table should NOT be accessible to one of these roles (e.g. `public_submission_log`, which is `service_role` only), explicitly state that as a documented exception with a one-line reason, not by silently omitting the grant.
+- **Pre-Migration Schema-Conflict Checklist**: Before writing any new RLS policy, complete this 3-point check:
+  1. *Nullability check*: If a policy condition requires `col IS NULL` or `IS NOT NULL`, confirm the column's actual `NULL`/`NOT NULL` constraint allows it.
+  2. *Constraint check*: Confirm `CHECK` constraints, FK rules, and `DEFAULT` values don't conflict with what the RLS policy permits.
+  3. *ACL check*: Confirm `GRANT` statements exist for every role referenced in a `to <role>` clause of any RLS policy.
 - **Type Regeneration**: Check whether TypeScript definitions in `@/lib/supabase/` require manual interface updates after DDL alterations.
 
 ---
@@ -222,5 +232,7 @@ export async function POST(request: Request) {
 - [ ] Code contains zero unused imports.
 - [ ] All API routes are located under `/api/v1/` and structured as thin handler wrappers.
 - [ ] Business logic resides in `src/server/services/`.
+- [ ] Every created/altered table in this session's migrations has explicit GRANT statements for both authenticated and service_role (or a documented exception).
+- [ ] Every new/modified RLS policy has been cross-checked against the table's actual DDL constraints (nullability, CHECK, FK).
 - [ ] Version in `package.json` is incremented according to semantic versioning when pushing features.
 - [ ] Commit message clearly describes the technical scope of the changes.

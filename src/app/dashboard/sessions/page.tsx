@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { redirect } from "next/navigation"
 import { SiteHeader } from "@/components/site-header"
 import { getTranslations } from "next-intl/server"
+import { decryptPlate } from "@/lib/utils/plate-number"
 import { SessionsListClient, type SessionItem } from "./SessionsListClient"
 
 interface PageProps {
@@ -106,10 +107,14 @@ export default async function SessionsPage({ searchParams }: PageProps) {
   const rawSessions = sessionsData || []
   const totalCount = count || 0
 
-  const sessions: SessionItem[] = rawSessions.map((row: any) => ({
-    ...row,
-    forms: Array.isArray(row.forms) ? row.forms[0] ?? null : row.forms,
-  }))
+  const sessions: SessionItem[] = rawSessions.map((row: any) => {
+    const { plate_number_encrypted, ...rest } = row
+    return {
+      ...rest,
+      plate_number: decryptPlate(plate_number_encrypted),
+      forms: Array.isArray(row.forms) ? row.forms[0] ?? null : row.forms,
+    }
+  })
 
   return (
     <>

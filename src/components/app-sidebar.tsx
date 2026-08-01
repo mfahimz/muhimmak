@@ -26,6 +26,7 @@ import {
   Users,
   Settings,
   PlusIcon,
+  ClockAlert,
 } from "lucide-react"
 
 const ALL_NAV_ITEMS = [
@@ -51,6 +52,12 @@ const ALL_NAV_ITEMS = [
     title: "Sessions",
     url: "/dashboard/sessions",
     icon: ClipboardList,
+    roles: ["super_admin", "ceo", "agm", "manager", "receptionist"],
+  },
+  {
+    title: "Pending Closures",
+    url: "/dashboard/pending-closures",
+    icon: ClockAlert,
     roles: ["super_admin", "ceo", "agm", "manager", "receptionist"],
   },
   {
@@ -140,7 +147,10 @@ export function AppSidebar({ user, ...props }: AppSidebarProps) {
             <SidebarMenu className="gap-0.5 px-1">
               {navItems.map((item) => {
                 const Icon = item.icon
-                const isActive = pathname === item.url || pathname.startsWith(item.url + "/")
+                const isActive =
+                  item.url === "/dashboard"
+                    ? pathname === "/dashboard"
+                    : pathname === item.url || pathname.startsWith(item.url + "/")
                 const translationKey = item.title === "detailedReports" ? "detailedReports" : `nav.${item.title}`
 
                 return (

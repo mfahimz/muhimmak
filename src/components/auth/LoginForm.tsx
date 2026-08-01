@@ -169,7 +169,7 @@ export function LoginForm() {
               <div className="logo-dashed-ring animate-spin-slow" />
               <div className="logo-viewport">
                 <img
-                  src="/brand/al-maraghi-icon-white.png"
+                  src="/brand/al-maraghi-icon-black.png"
                   alt={t('logoAlt')}
                   width="56"
                   height="56"
@@ -317,7 +317,7 @@ const loginStyles = /* css */ `
     flex-direction: column;
     min-height: 100vh;
     width: 100%;
-    background-color: #fafafa;
+    background-color: #0b0f19;
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     opacity: 0;
     transition: opacity 0.35s cubic-bezier(0.22, 1, 0.36, 1);
@@ -333,11 +333,11 @@ const loginStyles = /* css */ `
     }
   }
 
-  /* ═══ LEFT PANEL ═══ */
+  /* ═══ LEFT PANEL (LIGHT SCHEME) ═══ */
   .left-panel {
     width: 100%;
     min-height: 360px;
-    background: radial-gradient(circle at 30% 30%, #151b2d 0%, #090c15 100%);
+    background: radial-gradient(circle at 30% 30%, #ffffff 0%, #f8fafc 100%);
     position: relative;
     overflow: visible;
     display: flex;
@@ -345,7 +345,7 @@ const loginStyles = /* css */ `
     align-items: center;
     justify-content: center;
     padding: 3rem 2rem;
-    color: white;
+    color: #0f172a;
   }
 
   @media (min-width: 768px) {
@@ -359,8 +359,8 @@ const loginStyles = /* css */ `
     position: absolute;
     inset: 0;
     background-image: 
-      linear-gradient(rgba(99, 102, 241, 0.04) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(99, 102, 241, 0.04) 1px, transparent 1px);
+      linear-gradient(rgba(79, 70, 229, 0.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(79, 70, 229, 0.05) 1px, transparent 1px);
     background-size: 30px 30px;
     background-position: center;
     mask-image: radial-gradient(circle at 50% 50%, black 50%, transparent 95%);
@@ -371,7 +371,7 @@ const loginStyles = /* css */ `
     position: absolute;
     width: 400px;
     height: 400px;
-    background: radial-gradient(circle, rgba(79, 70, 229, 0.12) 0%, transparent 70%);
+    background: radial-gradient(circle, rgba(79, 70, 229, 0.08) 0%, transparent 70%);
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
@@ -385,8 +385,8 @@ const loginStyles = /* css */ `
     left: 20px;
     width: 15px;
     height: 15px;
-    border-top: 1px solid rgba(255, 255, 255, 0.15);
-    border-left: 1px solid rgba(255, 255, 255, 0.15);
+    border-top: 1px solid rgba(79, 70, 229, 0.2);
+    border-left: 1px solid rgba(79, 70, 229, 0.2);
   }
   .left-panel-decor-y {
     position: absolute;
@@ -394,8 +394,8 @@ const loginStyles = /* css */ `
     right: 20px;
     width: 15px;
     height: 15px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.15);
-    border-right: 1px solid rgba(255, 255, 255, 0.15);
+    border-bottom: 1px solid rgba(79, 70, 229, 0.2);
+    border-right: 1px solid rgba(79, 70, 229, 0.2);
   }
 
   .left-panel-content {
@@ -413,11 +413,11 @@ const loginStyles = /* css */ `
     width: 130px;
     height: 130px;
     border-radius: 50%;
-    background: rgba(79, 70, 229, 0.03);
-    border: 1px solid rgba(79, 70, 229, 0.15);
+    background: rgba(79, 70, 229, 0.04);
+    border: 1px solid rgba(79, 70, 229, 0.18);
     box-shadow: 
-      0 0 30px rgba(79, 70, 229, 0.15),
-      inset 0 0 20px rgba(79, 70, 229, 0.05);
+      0 0 30px rgba(79, 70, 229, 0.1),
+      inset 0 0 20px rgba(79, 70, 229, 0.04);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -426,22 +426,22 @@ const loginStyles = /* css */ `
 
   .logo-halo-ring:hover {
     transform: scale(1.03);
-    border-color: rgba(79, 70, 229, 0.3);
+    border-color: rgba(79, 70, 229, 0.35);
   }
 
   .logo-dashed-ring {
     position: absolute;
     inset: -3px;
     border-radius: 50%;
-    border: 1px dashed rgba(99, 102, 241, 0.25);
+    border: 1px dashed rgba(79, 70, 229, 0.25);
   }
 
   .logo-viewport {
     width: 100px;
     height: 100px;
     border-radius: 50%;
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(79, 70, 229, 0.04);
+    border: 1px solid rgba(79, 70, 229, 0.12);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -453,7 +453,6 @@ const loginStyles = /* css */ `
     height: 56px;
     object-fit: contain;
     display: block;
-    border: 2px solid red;
   }
 
   /* Brand names */
@@ -468,7 +467,7 @@ const loginStyles = /* css */ `
     font-size: 2.25rem;
     font-weight: 800;
     letter-spacing: -0.02em;
-    color: #ffffff;
+    color: #0f172a;
     line-height: 1.1;
     margin: 0;
   }
@@ -476,7 +475,7 @@ const loginStyles = /* css */ `
   .left-brand-sub {
     font-size: 0.7rem;
     font-weight: 600;
-    color: rgba(255, 255, 255, 0.45);
+    color: #64748b;
     letter-spacing: 0.3em;
     margin-top: 0.35rem;
   }
@@ -485,7 +484,7 @@ const loginStyles = /* css */ `
   .left-divider {
     width: 40px;
     height: 1px;
-    background: linear-gradient(90deg, transparent, rgba(99, 102, 241, 0.5), transparent);
+    background: linear-gradient(90deg, transparent, rgba(79, 70, 229, 0.3), transparent);
     margin: 1.5rem 0;
   }
 
@@ -495,18 +494,18 @@ const loginStyles = /* css */ `
     align-items: center;
     gap: 0.75rem;
     font-size: 0.85rem;
-    color: rgba(255, 255, 255, 0.7);
+    color: #64748b;
   }
 
   .tagline-en {
-    font-weight: 300;
+    font-weight: 400;
   }
 
   .tagline-dot {
     width: 3px;
     height: 3px;
     border-radius: 50%;
-    background-color: rgba(79, 70, 229, 0.5);
+    background-color: rgba(79, 70, 229, 0.6);
   }
 
   .tagline-ar {
@@ -514,10 +513,10 @@ const loginStyles = /* css */ `
     font-weight: 500;
   }
 
-  /* ═══ RIGHT PANEL ═══ */
+  /* ═══ RIGHT PANEL (DARK SCHEME) ═══ */
   .right-panel {
     width: 100%;
-    background-color: #fafafa;
+    background-color: #0b0f19;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -533,7 +532,7 @@ const loginStyles = /* css */ `
       width: 58%;
       min-height: 100vh;
       min-height: 100dvh;
-      background-color: #f8fafc;
+      background-color: #0b0f19;
       flex: none;
     }
   }
@@ -546,15 +545,15 @@ const loginStyles = /* css */ `
     gap: 1.5rem;
   }
 
-  /* Form Card */
+  /* Form Card (Dark Mode) */
   .form-card {
-    background-color: #ffffff;
-    border: 1px solid #e2e8f0;
+    background-color: #111827;
+    border: 1px solid #1f2937;
     border-radius: 16px;
     padding: 2.25rem 2rem;
     box-shadow: 
-      0 4px 6px -1px rgba(0, 0, 0, 0.01), 
-      0 10px 15px -3px rgba(0, 0, 0, 0.02);
+      0 10px 25px -5px rgba(0, 0, 0, 0.5), 
+      0 8px 10px -6px rgba(0, 0, 0, 0.5);
   }
 
   .form-header {
@@ -565,14 +564,14 @@ const loginStyles = /* css */ `
   .form-title {
     font-size: 1.35rem;
     font-weight: 700;
-    color: #0f172a;
+    color: #f8fafc;
     letter-spacing: -0.01em;
     margin: 0;
   }
 
   .form-subtitle {
     font-size: 0.85rem;
-    color: #64748b;
+    color: #9ca3af;
     margin-top: 0.4rem;
   }
 
@@ -591,7 +590,7 @@ const loginStyles = /* css */ `
   .form-label {
     font-size: 0.75rem;
     font-weight: 600;
-    color: #475569;
+    color: #9ca3af;
     letter-spacing: 0.02em;
   }
 
@@ -606,22 +605,22 @@ const loginStyles = /* css */ `
     height: 44px;
     padding: 0 1rem;
     border-radius: 8px;
-    border: 1px solid #cbd5e1;
-    background-color: #ffffff;
-    color: #0f172a;
+    border: 1px solid #1f2937;
+    background-color: #1f2937;
+    color: #f8fafc;
     font-size: 0.95rem;
     outline: none;
     transition: all 0.2s ease;
   }
 
   .form-input:focus {
-    border-color: #4f46e5;
-    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+    border-color: #6366f1;
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
   }
 
   .form-input:disabled {
-    background-color: #f1f5f9;
-    color: #94a3b8;
+    background-color: #111827;
+    color: #4b5563;
     cursor: not-allowed;
   }
 
@@ -638,7 +637,7 @@ const loginStyles = /* css */ `
     position: relative;
     aspect-ratio: 1;
     border-radius: 50%;
-    border: 2px solid #e2e8f0;
+    border: 2px solid #1f2937;
     background-color: transparent;
     display: flex;
     align-items: center;
@@ -647,15 +646,15 @@ const loginStyles = /* css */ `
   }
 
   .pin-dot-wrapper.filled {
-    background-color: #4f46e5;
-    border-color: #4f46e5;
-    box-shadow: 0 0 12px rgba(79, 70, 229, 0.25);
+    background-color: #6366f1;
+    border-color: #6366f1;
+    box-shadow: 0 0 12px rgba(99, 102, 241, 0.35);
     transform: scale(1.05);
   }
 
   .pin-dot-wrapper:focus-within {
-    border-color: #4f46e5;
-    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
+    border-color: #6366f1;
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
   }
 
   .pin-hidden-input {
@@ -674,7 +673,7 @@ const loginStyles = /* css */ `
     width: 10px;
     height: 10px;
     border-radius: 50%;
-    background-color: #cbd5e1;
+    background-color: #9ca3af;
     transition: all 0.2s cubic-bezier(0.22, 1, 0.36, 1);
   }
 
@@ -685,7 +684,7 @@ const loginStyles = /* css */ `
 
   .form-help-text {
     font-size: 0.75rem;
-    color: #64748b;
+    color: #9ca3af;
     margin-top: 0.25rem;
   }
 
@@ -694,7 +693,7 @@ const loginStyles = /* css */ `
     width: 100%;
     height: 46px;
     border-radius: 8px;
-    background-color: #4f46e5;
+    background-color: #6366f1;
     color: white;
     border: none;
     font-weight: 600;
@@ -708,7 +707,7 @@ const loginStyles = /* css */ `
   }
 
   .form-submit-btn:hover:not(:disabled) {
-    background-color: #4338ca;
+    background-color: #4f46e5;
   }
 
   .form-submit-btn:active:not(:disabled) {
@@ -738,22 +737,22 @@ const loginStyles = /* css */ `
   }
 
   .banner-alert-warning {
-    background-color: #fffbeb;
-    border: 1px solid #fef3c7;
-    color: #b45309;
+    background-color: rgba(245, 158, 11, 0.1);
+    border: 1px solid rgba(245, 158, 11, 0.25);
+    color: #fbbf24;
   }
 
   .banner-alert-error {
-    background-color: #fff5f5;
-    border: 1px solid #fee2e2;
-    color: #c53030;
+    background-color: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.25);
+    color: #f87171;
   }
 
   /* Footer Info */
   .right-panel-footer {
     text-align: center;
     font-size: 0.75rem;
-    color: #94a3b8;
+    color: #9ca3af;
     margin-top: 0.5rem;
   }
 

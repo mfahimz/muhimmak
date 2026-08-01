@@ -433,7 +433,7 @@ export async function suggestBranching(request: Request): Promise<NextResponse> 
     }
 
     const possibleSources = questions.filter(
-      (q: any) => q.type === 'multiple_choice' || q.type === 'star_rating'
+      (q: any) => q.type === 'multiple_choice' || q.type === 'star_rating' || q.type === 'numeric_scale'
     );
 
     if (possibleSources.length === 0) {
@@ -506,7 +506,7 @@ Schema:
         const sourceIdx = questions.findIndex((q: any) => q.id === condition.fieldId);
         if (sourceIdx < 0 || sourceIdx >= targetIdx) continue; // Source must appear earlier
 
-        if (sourceQ.type !== 'multiple_choice' && sourceQ.type !== 'star_rating') continue;
+        if (sourceQ.type !== 'multiple_choice' && sourceQ.type !== 'star_rating' && sourceQ.type !== 'numeric_scale') continue;
 
         if (sourceQ.type === 'multiple_choice') {
           if (condition.operator !== 'equals' && condition.operator !== 'not_equals') continue;
@@ -515,6 +515,11 @@ Schema:
           if (condition.operator !== 'lte' && condition.operator !== 'gte') continue;
           const numVal = Number(condition.value);
           if (!Number.isInteger(numVal) || numVal < 1 || numVal > 5) continue;
+          condition.value = numVal;
+        } else if (sourceQ.type === 'numeric_scale') {
+          if (condition.operator !== 'lte' && condition.operator !== 'gte') continue;
+          const numVal = Number(condition.value);
+          if (!Number.isInteger(numVal) || numVal < 1 || numVal > 10) continue;
           condition.value = numVal;
         }
 
@@ -536,3 +541,167 @@ Schema:
     return NextResponse.json({ error: err.message || err }, { status: 500 });
   }
 }
+
+// ---------------------------------------------------------------------------
+// generateForm — Type C AI Form Generator
+// ---------------------------------------------------------------------------
+export async function generateForm(request: Request): Promise<NextResponse> {
+  try {
+    const auth = await authorizeFormAdmin();
+    if (!auth.authorized) return auth.response;
+    const { admin } = auth;
+
+    const body = await request.json();
+    const { description, questionCount } = body;
+
+    if (!description || typeof description !== 'string' || description.trim() === '') {
+      return NextResponse.json({ error: 'Description is required and must be a non-empty string' }, { status: 400 });
+    }
+
+    if (
+      questionCount !== undefined &&
+      questionCount !== 'ai' &&
+      (typeof questionCount !== 'number' || !Number.isInteger(questionCount) || questionCount < 3 || questionCount > 10)
+    ) {
+      return NextResponse.json(
+        { error: 'questionCount must be an integer between 3 and 10, or "ai"' },
+        { status: 400 }
+      );
+    }
+
+    const effectiveQuestionCount = questionCount ?? 'ai';
+
+    const cookieStore = await cookies();
+    const locale = cookieStore.get('NEXT_LOCALE')?.value || 'en';
+    const languageName = locale === 'ar' ? 'Arabic' : 'English';
+
+    const businessContext = await getBusinessContext(admin);
+
+    if (!process.env.DEEPSEEK_API_KEY) {
+      return NextResponse.json({ error: 'DeepSeek API Key is not configured' }, { status: 500 });
+    }
+
+    const systemPrompt = `You are an expert feedback form designer for a UAE service facility.\n\nBusiness Context:\n${businessContext}`;
+
+    const countInstruction =
+      typeof effectiveQuestionCount === 'number'
+        ? `Generate EXACTLY ${effectiveQuestionCount} questions.`
+        : `Decide the best number of questions to generate (between 3 and 8 questions).`;
+
+    const userPrompt = `Staff member requests a feedback form based on this description:
+"${description.trim()}"
+
+${countInstruction}
+The generated questions must be in the ${languageName} language (matching the "${locale}" locale).
+
+Return ONLY a raw JSON object matching this exact shape. Do NOT wrap it in markdown formatting (like \`\`\`json) and do NOT include any explanation or extra text.
+
+Required JSON Structure:
+{
+  "fields": [
+    {
+      "id": "q1",
+      "type": "star_rating",
+      "label": "Question text here",
+      "options": [],
+      "weight": 50,
+      "dependsOn": null
+    }
+  ]
+}
+
+Constraints:
+1. "type" can only be "star_rating", "text", or "multiple_choice".
+2. "options" must be an empty array [] if type is "star_rating" or "text".
+3. "options" must contain 2 to 4 options if type is "multiple_choice".
+4. "id" must be a short unique string (e.g. "q1", "q2", etc.).
+5. "weight" must be a number. Text questions MUST have a weight of 0.
+6. Non-text questions (star_rating, multiple_choice) MUST have positive weights that sum to EXACTLY 100 across all non-text questions.
+7. "dependsOn" must be null for all fields.
+8. Questions must be practical, specific to the staff description, and appropriate for a service facility customer survey.`;
+
+    let content: string;
+    try {
+      content = await callDeepSeekWithRetry(systemPrompt, userPrompt, 0.7);
+    } catch {
+      return NextResponse.json({ error: 'AI service unavailable, please try again' }, { status: 502 });
+    }
+
+    let parsed: any;
+    try {
+      const cleaned = content.trim().replace(/^```json\s*|```$/g, '').trim();
+      parsed = JSON.parse(cleaned);
+    } catch (parseErr) {
+      console.error('Failed to parse DeepSeek output:', content, parseErr);
+      return NextResponse.json({ error: 'DeepSeek returned malformed JSON' }, { status: 500 });
+    }
+
+    if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.fields) || parsed.fields.length === 0) {
+      return NextResponse.json({ error: 'AI response validation failed: missing fields array' }, { status: 500 });
+    }
+
+    const validatedFields: Array<{
+      id: string;
+      type: 'star_rating' | 'multiple_choice' | 'text' | 'numeric_scale';
+      label: string;
+      options: string[];
+      weight: number;
+      dependsOn: null;
+    }> = [];
+    for (let i = 0; i < parsed.fields.length; i++) {
+      const item = parsed.fields[i];
+      if (!item || typeof item !== 'object') {
+        return NextResponse.json({ error: `AI response validation failed: field at index ${i} is invalid` }, { status: 500 });
+      }
+      if (!item.type || !['star_rating', 'multiple_choice', 'text', 'numeric_scale'].includes(item.type)) {
+        return NextResponse.json({ error: `AI response validation failed: field ${i} has invalid type` }, { status: 500 });
+      }
+      if (!item.label || typeof item.label !== 'string' || item.label.trim() === '') {
+        return NextResponse.json({ error: `AI response validation failed: field ${i} missing label` }, { status: 500 });
+      }
+
+      const isText = item.type === 'text';
+      const isMultipleChoice = item.type === 'multiple_choice';
+
+      validatedFields.push({
+        id: typeof item.id === 'string' && item.id.trim() ? item.id.trim() : `q${i + 1}`,
+        type: item.type,
+        label: item.label.trim(),
+        options: isMultipleChoice && Array.isArray(item.options) ? item.options.map(String) : [],
+        weight: isText ? 0 : Number.isFinite(Number(item.weight)) ? Math.max(0, Math.round(Number(item.weight))) : 0,
+        dependsOn: null,
+      });
+    }
+
+    // Auto-correct / normalize weights for non-text fields so total is 100
+    const nonTextIndices = validatedFields
+      .map((f, idx) => (f.type !== 'text' ? idx : -1))
+      .filter((idx) => idx !== -1);
+
+    if (nonTextIndices.length > 0) {
+      const currentSum = nonTextIndices.reduce((sum, idx) => sum + validatedFields[idx].weight, 0);
+      if (currentSum !== 100) {
+        if (currentSum === 0) {
+          // Distribute 100 evenly across non-text fields
+          const baseWeight = Math.floor(100 / nonTextIndices.length);
+          let remainder = 100 - baseWeight * nonTextIndices.length;
+          nonTextIndices.forEach((idx) => {
+            validatedFields[idx].weight = baseWeight + (remainder > 0 ? 1 : 0);
+            if (remainder > 0) remainder--;
+          });
+        } else {
+          // Adjust last non-text field weight to make exact sum of 100
+          const diff = 100 - currentSum;
+          const lastIdx = nonTextIndices[nonTextIndices.length - 1];
+          validatedFields[lastIdx].weight = Math.max(0, validatedFields[lastIdx].weight + diff);
+        }
+      }
+    }
+
+    return NextResponse.json({ fields: validatedFields });
+  } catch (err: any) {
+    console.error('generateForm error:', err);
+    return NextResponse.json({ error: err.message || err }, { status: 500 });
+  }
+}
+

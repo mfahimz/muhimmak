@@ -3,6 +3,7 @@
 import * as React from "react"
 import { useRouter, usePathname } from "next/navigation"
 import { useTranslations, useLocale } from "next-intl"
+import { toArabicNumerals } from "@/lib/utils/arabic-numerals"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Calendar, Filter, ArrowLeft, ArrowRight, ClipboardList } from "lucide-react"
@@ -13,7 +14,7 @@ export interface SessionItem {
   form_id: string
   location_id: string | null
   status: string
-  plate_number_encrypted: string | null
+  plate_number: string | null
   consent_given: boolean | null
   language: string | null
   started_at: string
@@ -117,7 +118,7 @@ export function SessionsListClient({
 
   const formatDateTime = (dateStr: string | null) => {
     if (!dateStr) return "—"
-    return new Date(dateStr).toLocaleString(locale === "ar" ? "ar-AE" : "en-US", {
+    const formatted = new Date(dateStr).toLocaleString(locale === "ar" ? "ar-AE" : "en-US", {
       year: "numeric",
       month: "short",
       day: "numeric",
@@ -125,6 +126,7 @@ export function SessionsListClient({
       minute: "2-digit",
       hour12: true,
     })
+    return toArabicNumerals(formatted, locale)
   }
 
   const getEndedAt = (session: SessionItem) => {
@@ -307,7 +309,7 @@ export function SessionsListClient({
                       </td>
                       {showPlateNumber && (
                         <td className="px-6 py-4 text-start font-medium text-slate-700 dark:text-slate-300">
-                          {session.plate_number_encrypted || <span className="text-slate-400">—</span>}
+                          {session.plate_number || <span className="text-slate-400">—</span>}
                         </td>
                       )}
                     </tr>
@@ -323,11 +325,11 @@ export function SessionsListClient({
       {(hasPrevPage || hasNextPage) && (
         <div className="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-slate-800">
           <div className="text-xs text-muted-foreground select-none">
-            {t("paginationShowing")} <span className="font-semibold text-foreground">{currentPage}</span> {t("paginationOf")}{" "}
+            {t("paginationShowing")} <span className="font-semibold text-foreground">{toArabicNumerals(currentPage, locale)}</span> {t("paginationOf")}{" "}
             <span className="font-semibold text-foreground">
-              {Math.max(1, Math.ceil(totalCount / pageSize))}
+              {toArabicNumerals(Math.max(1, Math.ceil(totalCount / pageSize)), locale)}
             </span>{" "}
-            ({totalCount} {t("paginationItems")})
+            ({toArabicNumerals(totalCount, locale)} {t("paginationItems")})
           </div>
           <div className="flex gap-2">
             <Button

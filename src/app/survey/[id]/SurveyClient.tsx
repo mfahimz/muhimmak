@@ -6,12 +6,13 @@ import { useTranslations } from "next-intl"
 import { useIdleTimer } from "@/hooks/useIdleTimer"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { ChevronLeft, AlertTriangle, ArrowRight, RefreshCw, QrCode, ThumbsUp } from "lucide-react"
+import { ChevronLeft, AlertTriangle, ArrowRight, RefreshCw, QrCode, ThumbsUp, Loader2 } from "lucide-react"
 import { QRCodeSVG } from "qrcode.react"
+import { toArabicNumerals } from "@/lib/utils/arabic-numerals"
 
 export interface SurveyField {
   id: string
-  type: "star_rating" | "text" | "multiple_choice"
+  type: "star_rating" | "text" | "multiple_choice" | "numeric_scale"
   label: string
   required: boolean
   options: string[]
@@ -23,6 +24,7 @@ export interface SurveyField {
   weight?: number
   optionScores?: number[]
   ar?: { label: string; options: string[] }
+  visit_stage?: 'drop_off' | 'pick_up' | null
 }
 
 export interface SurveySession {
@@ -31,11 +33,12 @@ export interface SurveySession {
   location_id: string | null
   status: string
   language: string
-  plate_number_encrypted: string | null
+  visit_stage?: 'drop_off' | 'pick_up' | null
 }
 
 interface SurveyClientProps {
   session: SurveySession
+  plateNumber?: string | null
   form: {
     id: string
     name: string
@@ -46,6 +49,7 @@ interface SurveyClientProps {
     google_review_url: string
     review_qr_threshold_percent: number
   }
+  isPublicMode?: boolean
 }
 
 function isFieldVisible(field: SurveyField, answers: Record<string, any>): boolean {
@@ -67,23 +71,30 @@ function isFieldVisible(field: SurveyField, answers: Record<string, any>): boole
   }
 }
 
-export function SurveyClient({ session, form, facilitySettings }: SurveyClientProps) {
+export function SurveyClient({ session, plateNumber, form, facilitySettings, isPublicMode }: SurveyClientProps) {
   const router = useRouter()
   const t = useTranslations("Survey")
+
+  const isPublic = Boolean(isPublicMode || !(session as any).created_by || (session as any).channel === 'public_qr')
   
   // Parse fields
   const fields = React.useMemo(() => {
+    let parsed: SurveyField[] = []
     if (Array.isArray(form.fields)) {
-      return form.fields as SurveyField[]
+      parsed = form.fields as SurveyField[]
     }
-    return []
-  }, [form.fields])
+    if (session.visit_stage) {
+      return parsed.filter(f => !f.visit_stage || f.visit_stage === session.visit_stage)
+    }
+    return parsed
+  }, [form.fields, session.visit_stage])
 
   const isArabic = session.language === 'ar'
 
   // UI state
   const [step, setStep] = React.useState<"handoff" | "consent" | "survey" | "refused" | "completed" | "ended">(() => {
     if (session.status === "refused" || session.status === "completed" || session.status === "abandoned") return "ended"
+    if (isPublic) return "consent"
     return "handoff"
   })
   const [currentFieldIdx, setCurrentFieldIdx] = React.useState(0)
@@ -92,9 +103,38 @@ export function SurveyClient({ session, form, facilitySettings }: SurveyClientPr
   const [submitting, setSubmitting] = React.useState(false)
   const [showQr, setShowQr] = React.useState(false)
 
+  // AI closing question states
+  const [extraFields, setExtraFields] = React.useState<SurveyField[]>([])
+  const [aiClosingQuestion, setAiClosingQuestion] = React.useState<any | null>(null)
+  const [aiClosingQuestionStatus, setAiClosingQuestionStatus] = React.useState<'idle' | 'pending' | 'ready' | 'failed'>('idle')
+  const [lockedClosingQuestion, setLockedClosingQuestion] = React.useState<SurveyField | null>(null)
+
+  const combinedFields = React.useMemo(() => {
+    return [...fields, ...extraFields]
+  }, [fields, extraFields])
+
   const visibleFields = React.useMemo(() => {
-    return fields.filter(f => isFieldVisible(f, answers))
-  }, [fields, answers])
+    return combinedFields.filter(f => isFieldVisible(f, answers))
+  }, [combinedFields, answers])
+
+  const isClosing = React.useMemo(() => {
+    const field = visibleFields[currentFieldIdx]
+    return !!field && (field.id === 'd1a1a1a1-0008-4000-8000-000000000008' || field.id === 'p1c1k1u1-0010-4000-8000-000000000010')
+  }, [visibleFields, currentFieldIdx])
+
+  const currentField = React.useMemo(() => {
+    const field = visibleFields[currentFieldIdx]
+    if (!field) return field
+
+    if (isClosing && lockedClosingQuestion) {
+      return lockedClosingQuestion
+    }
+    return field
+  }, [visibleFields, currentFieldIdx, isClosing, lockedClosingQuestion])
+
+  const showClosingLoading = React.useMemo(() => {
+    return isClosing && !isArabic && !lockedClosingQuestion
+  }, [isClosing, isArabic, lockedClosingQuestion])
 
   // AI text scoring states
   const [textScores, setTextScores] = React.useState<Record<string, number>>({})
@@ -115,7 +155,43 @@ export function SurveyClient({ session, form, facilitySettings }: SurveyClientPr
   const [warningCount, setWarningCount] = React.useState(10)
   const countdownIntervalRef = React.useRef<NodeJS.Timeout | null>(null)
 
-  // Idle timer hook
+  const triggerAiGeneration = React.useCallback((currentAnswers: Record<string, any>) => {
+    const isAr = session.language === 'ar'
+    if (isAr || !session.visit_stage || aiClosingQuestionStatus !== 'idle') return
+
+    setAiClosingQuestionStatus('pending')
+    
+    // Prepare question labels
+    const questionLabels: Record<string, string> = {}
+    fields.forEach(f => {
+      questionLabels[f.id] = f.label
+    })
+
+    fetch("/api/v1/sessions/generate-closing-question", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionId: session.id,
+        visitStage: session.visit_stage,
+        answers: currentAnswers,
+        questionLabels,
+      }),
+    })
+      .then(res => {
+        if (!res.ok) throw new Error("AI generation failed")
+        return res.json()
+      })
+      .then(data => {
+        setAiClosingQuestion(data)
+        setAiClosingQuestionStatus('ready')
+      })
+      .catch(err => {
+        console.error("AI closing question generation failed:", err)
+        setAiClosingQuestionStatus('failed')
+      })
+  }, [session.id, session.visit_stage, session.language, fields, aiClosingQuestionStatus])
+
+  // Idle timer hook (disabled on personal device flow)
   const { resetTimer } = useIdleTimer({
     timeoutMs: 90000, // 90 seconds
     warningMs: 10000, // 10 seconds warning
@@ -142,7 +218,7 @@ export function SurveyClient({ session, form, facilitySettings }: SurveyClientPr
       if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current)
       setShowWarningModal(false)
     },
-    enabled: step === "survey",
+    enabled: step === "survey" && !isPublic,
   })
 
   // Monitor count down to trigger actual timeout if interval didn't complete
@@ -160,6 +236,61 @@ export function SurveyClient({ session, form, facilitySettings }: SurveyClientPr
       if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current)
     }
   }, [])
+
+  // Lock or wait for AI closing question
+  React.useEffect(() => {
+    if (!isClosing || lockedClosingQuestion) return
+
+    const originalField = visibleFields[currentFieldIdx]
+    if (!originalField) return
+
+    if (isArabic) {
+      // Arabic sessions skip AI and show static immediately (no loading state)
+      setLockedClosingQuestion(originalField)
+      return
+    }
+
+    // Trigger AI generation if it hasn't been triggered yet
+    if (aiClosingQuestionStatus === 'idle') {
+      triggerAiGeneration(answers)
+      return
+    }
+
+    // If AI question is already ready, lock it immediately
+    if (aiClosingQuestionStatus === 'ready' && aiClosingQuestion) {
+      setLockedClosingQuestion({
+        ...originalField,
+        type: aiClosingQuestion.type,
+        label: aiClosingQuestion.label,
+        options: aiClosingQuestion.options || [],
+      })
+      return
+    }
+
+    // If AI question already failed, lock to static immediately
+    if (aiClosingQuestionStatus === 'failed') {
+      setLockedClosingQuestion(originalField)
+      return
+    }
+
+    // Otherwise, we wait up to 2500ms
+    const timer = setTimeout(() => {
+      // Timer expired, lock to static fallback
+      setLockedClosingQuestion(originalField)
+    }, 2500)
+
+    return () => clearTimeout(timer)
+  }, [
+    isClosing,
+    currentFieldIdx,
+    isArabic,
+    aiClosingQuestionStatus,
+    aiClosingQuestion,
+    lockedClosingQuestion,
+    visibleFields,
+    answers,
+    triggerAiGeneration,
+  ])
 
   // React effect watching pendingTextFields to fire a follow-up POST for rescoring
   React.useEffect(() => {
@@ -238,7 +369,6 @@ export function SurveyClient({ session, form, facilitySettings }: SurveyClientPr
 
   // Answer handlers
   const handleAnswer = (val: any, autoAdvance = true) => {
-    const currentField = visibleFields[currentFieldIdx]
     setAnswers(prev => ({ ...prev, [currentField.id]: val }))
 
     // Trigger AI text scoring if field type is text and answer is non-empty
@@ -284,9 +414,22 @@ export function SurveyClient({ session, form, facilitySettings }: SurveyClientPr
         })
     }
 
+    // Trigger AI closing question generation if conditions are met
+    const isAr = session.language === 'ar'
+    if (!isAr && session.visit_stage && aiClosingQuestionStatus === 'idle') {
+      const updatedAnswers = { ...answers, [currentField.id]: val }
+      // Filter out meta keys like _textScores
+      const answeredKeys = Object.keys(updatedAnswers).filter(k => k !== '_textScores')
+      const triggerThreshold = Math.ceil(fields.length * 0.5)
+
+      if (answeredKeys.length >= triggerThreshold) {
+        triggerAiGeneration(updatedAnswers)
+      }
+    }
+
     if (autoAdvance) {
       const updatedAnswers = { ...answers, [currentField.id]: val }
-      const nextVisibleFields = fields.filter(f => isFieldVisible(f, updatedAnswers))
+      const nextVisibleFields = combinedFields.filter(f => isFieldVisible(f, updatedAnswers))
       const isLastVisible = currentFieldIdx >= nextVisibleFields.length - 1
 
       if (!isLastVisible) {
@@ -403,9 +546,9 @@ export function SurveyClient({ session, form, facilitySettings }: SurveyClientPr
     return (
       <div className="flex-1 flex items-center justify-center p-4">
         <Card className="max-w-2xl w-full border border-slate-200 shadow-xl dark:border-slate-800 rounded-3xl overflow-hidden bg-white/80 dark:bg-slate-900/80 backdrop-blur-md p-8 md:p-12 text-center space-y-8 animate-fade-in">
-          {session.plate_number_encrypted && (
+          {plateNumber && (
             <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-700 text-xs font-bold uppercase tracking-wider dark:bg-indigo-950/40 dark:border-indigo-900 dark:text-indigo-400">
-              Vehicle: {session.plate_number_encrypted}
+              Vehicle: {plateNumber}
             </div>
           )}
 
@@ -535,37 +678,52 @@ export function SurveyClient({ session, form, facilitySettings }: SurveyClientPr
           </div>
 
           {showQr && (
-            <div className="flex flex-col items-center justify-center p-6 bg-slate-50 rounded-2xl border border-slate-100 shadow-inner dark:bg-slate-950/50 dark:border-slate-850 gap-4 animate-fade-in">
-              <div className="space-y-1">
-                <span className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center justify-center gap-1">
-                  <QrCode className="size-4 text-indigo-600" />
-                  <span>{t("reviewTitle")}</span>
-                </span>
-                <p className="text-xs text-muted-foreground">
-                  {t("reviewSubtitle")}
-                </p>
+            isPublic ? (
+              <div className="pt-2 animate-fade-in">
+                <a
+                  href={facilitySettings.google_review_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full inline-flex items-center justify-center gap-2 px-6 py-4 text-base font-bold bg-amber-500 hover:bg-amber-600 text-white rounded-2xl shadow-lg transition active:scale-98 cursor-pointer"
+                >
+                  <ThumbsUp className="size-5" />
+                  <span>{isArabic ? "اترك تقييمك على Google" : "Leave us a review on Google"}</span>
+                </a>
               </div>
-              <div className="p-3 bg-white rounded-xl shadow-xs">
-                <QRCodeSVG value={facilitySettings.google_review_url} size={150} level="H" />
+            ) : (
+              <div className="flex flex-col items-center justify-center p-6 bg-slate-50 rounded-2xl border border-slate-100 shadow-inner dark:bg-slate-950/50 dark:border-slate-850 gap-4 animate-fade-in">
+                <div className="space-y-1">
+                  <span className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center justify-center gap-1">
+                    <QrCode className="size-4 text-indigo-600" />
+                    <span>{t("reviewTitle")}</span>
+                  </span>
+                  <p className="text-xs text-muted-foreground">
+                    {t("reviewSubtitle")}
+                  </p>
+                </div>
+                <div className="p-3 bg-white rounded-xl shadow-xs">
+                  <QRCodeSVG value={facilitySettings.google_review_url} size={150} level="H" />
+                </div>
               </div>
-            </div>
+            )
           )}
 
-          <div className="pt-2">
-            <button
-              onClick={() => router.push("/dashboard")}
-              className="w-full px-6 py-3 text-sm font-bold bg-indigo-600 text-white rounded-2xl hover:bg-indigo-500 transition shadow-md active:scale-98 cursor-pointer"
-            >
-              {t("handbackButton")}
-            </button>
-          </div>
+          {!isPublic && (
+            <div className="pt-2">
+              <button
+                onClick={() => router.push("/dashboard")}
+                className="w-full px-6 py-3 text-sm font-bold bg-indigo-600 text-white rounded-2xl hover:bg-indigo-500 transition shadow-md active:scale-98 cursor-pointer"
+              >
+                {t("handbackButton")}
+              </button>
+            </div>
+          )}
         </Card>
       </div>
     )
   }
 
   // Standard Form rendering
-  const currentField = visibleFields[currentFieldIdx]
   const progressPercent = visibleFields.length > 0
     ? Math.round((currentFieldIdx / visibleFields.length) * 100)
     : 0
@@ -575,8 +733,8 @@ export function SurveyClient({ session, form, facilitySettings }: SurveyClientPr
       {/* Progress Bar & Header */}
       <div className="space-y-3">
         <div className="flex items-center justify-between text-xs font-semibold text-slate-500">
-          <span>{t("questionCounter", { current: currentFieldIdx + 1, total: visibleFields.length })}</span>
-          <span className="tabular-nums">{t("progressLabel", { percent: progressPercent })}</span>
+          <span>{t("questionCounter", { current: toArabicNumerals(currentFieldIdx + 1, isArabic ? 'ar' : 'en'), total: toArabicNumerals(visibleFields.length, isArabic ? 'ar' : 'en') })}</span>
+          <span className="tabular-nums">{t("progressLabel", { percent: toArabicNumerals(progressPercent, isArabic ? 'ar' : 'en') })}</span>
         </div>
         <div className="h-1.5 w-full bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
           <div
@@ -589,111 +747,152 @@ export function SurveyClient({ session, form, facilitySettings }: SurveyClientPr
       {/* Main Question Card */}
       <div className="flex-1 flex items-center justify-center py-8">
         <Card className="w-full border border-slate-200 shadow-lg dark:border-slate-800 rounded-2xl bg-white p-6 md:p-10 space-y-8">
-          <div className="space-y-2 text-center md:text-start">
-            <h3 className="text-xl md:text-2xl font-bold text-slate-900 dark:text-slate-100">
-              {isArabic && currentField.ar?.label ? currentField.ar.label : currentField.label}
-              <span className="text-rose-500 ml-1">*</span>
-            </h3>
-          </div>
+          {showClosingLoading ? (
+            <div className="flex flex-col items-center justify-center py-12 space-y-3">
+              <Loader2 className="size-6 text-indigo-600 animate-spin" />
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                {isArabic ? "لحظة من فضلك..." : "Just a moment..."}
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="space-y-2 text-center md:text-start">
+                <h3 className="text-xl md:text-2xl font-bold text-slate-900 dark:text-slate-100">
+                  {isArabic && currentField.ar?.label ? currentField.ar.label : currentField.label}
+                  <span className="text-rose-500 ml-1">*</span>
+                </h3>
+              </div>
 
-          {/* Render inputs matching currentField.type */}
-          <div className="flex items-center justify-center w-full">
-            {currentField.type === "star_rating" && (() => {
-              const emojiScale = ['😞', '😕', '😐', '🙂', '😄']
-              const displayScale = isArabic ? [...emojiScale].reverse() : emojiScale
-              const currentAnswer = answers[currentField.id]
-              return (
-                <div className="flex items-center justify-center gap-3 py-6">
-                  {displayScale.map((emoji, displayIdx) => {
-                    const ratingValue = isArabic ? (5 - displayIdx) : (displayIdx + 1)
-                    const isSelected = currentAnswer === ratingValue
-                    return (
-                      <button
-                        key={ratingValue}
-                        type="button"
-                        disabled={submitting}
-                        onClick={() => handleAnswer(ratingValue, true)}
-                        className={`
-                          flex items-center justify-center
-                          w-14 h-14 rounded-full border transition-all
-                          active:scale-90 text-3xl
-                          disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none
-                          ${isSelected
-                            ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950 scale-110 shadow-md'
-                            : 'border-slate-200 dark:border-slate-800 hover:border-indigo-300 hover:scale-105'
-                          }
-                        `}
-                      >
-                        {emoji}
-                      </button>
-                    )
-                  })}
-                </div>
-              )
-            })()}
-
-            {currentField.type === "multiple_choice" && (
-              <div className={`flex flex-col gap-3 w-full py-4 ${isArabic ? 'items-end' : 'items-start'}`}>
-                {(isArabic && currentField.ar?.options?.length
-                  ? currentField.ar.options
-                  : currentField.options
-                ).map((option, idx) => {
-                  const englishValue = currentField.options[idx]
+              {/* Render inputs matching currentField.type */}
+              <div className="flex items-center justify-center w-full">
+                {currentField.type === "star_rating" && (() => {
+                  const emojiScale = ['😞', '😕', '😐', '🙂', '😄']
+                  const displayScale = isArabic ? [...emojiScale].reverse() : emojiScale
                   const currentAnswer = answers[currentField.id]
-                  const isSelected = currentAnswer === englishValue
                   return (
-                    <button
-                      key={idx}
-                      type="button"
-                      disabled={submitting}
-                      onClick={submitting ? undefined : () => handleAnswer(englishValue, true)}
-                      className={`
-                        w-full px-5 py-4 rounded-xl border text-left transition-all
-                        disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none
-                        active:scale-[0.99]
-                        ${isArabic ? 'text-right' : 'text-left'}
-                        ${isSelected
-                          ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-medium'
-                          : 'border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-indigo-300 hover:bg-slate-50 dark:hover:bg-slate-900'
-                        }
-                      `}
-                    >
-                      {option}
-                    </button>
+                    <div className="flex items-center justify-center gap-3 py-6">
+                      {displayScale.map((emoji, displayIdx) => {
+                        const ratingValue = isArabic ? (5 - displayIdx) : (displayIdx + 1)
+                        const isSelected = currentAnswer === ratingValue
+                        return (
+                          <button
+                            key={ratingValue}
+                            type="button"
+                            disabled={submitting}
+                            onClick={() => handleAnswer(ratingValue, true)}
+                            className={`
+                              flex items-center justify-center
+                              w-14 h-14 rounded-full border transition-all
+                              active:scale-90 text-3xl
+                              disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none
+                              ${isSelected
+                                ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950 scale-110 shadow-md'
+                                : 'border-slate-200 dark:border-slate-800 hover:border-indigo-300 hover:scale-105'
+                              }
+                            `}
+                          >
+                            {emoji}
+                          </button>
+                        )
+                      })}
+                    </div>
                   )
-                })}
-              </div>
-            )}
+                })()}
 
-            {currentField.type === "text" && (
-              <div className="space-y-4 w-full py-2">
-                <textarea
-                  rows={4}
-                  value={textVal}
-                  onChange={(e) => setTextVal(e.target.value)}
-                  placeholder={t("textPlaceholder")}
-                  disabled={submitting}
-                  className="flex w-full rounded-xl border border-slate-250 bg-transparent px-4 py-3 text-base shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 text-slate-900 dark:text-slate-100 border-slate-200 dark:border-slate-800"
-                />
-                <div className="flex justify-end">
-                  <Button
-                    onClick={handleTextSubmit}
-                    disabled={submitting || !textVal.trim()}
-                    className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold flex items-center gap-1.5 h-11 px-6 rounded-xl shadow-xs"
-                  >
-                    {submitting ? (
-                      <RefreshCw className="size-4 animate-spin" />
-                    ) : (
-                      <>
-                        <span>{t("nextButton")}</span>
-                        <ArrowRight className="size-4" />
-                      </>
-                    )}
-                  </Button>
-                </div>
+                {currentField.type === "numeric_scale" && (() => {
+                  const currentAnswer = answers[currentField.id]
+                  return (
+                    <div className="flex flex-wrap gap-2 justify-center py-6 w-full">
+                      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((num) => {
+                        const isSelected = currentAnswer === num
+                        return (
+                          <button
+                            key={num}
+                            type="button"
+                            disabled={submitting}
+                            onClick={() => handleAnswer(num, true)}
+                            className={`
+                              flex items-center justify-center
+                              w-10 h-10 rounded-lg text-sm font-semibold transition-all
+                              active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed
+                              ${isSelected
+                                ? 'bg-indigo-600 text-white shadow-xs'
+                                : 'border border-slate-300 text-slate-700 bg-white hover:border-indigo-500 hover:text-indigo-600'
+                              }
+                            `}
+                          >
+                            {toArabicNumerals(num, isArabic ? 'ar' : 'en')}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )
+                })()}
+
+                {currentField.type === "multiple_choice" && (
+                  <div className={`flex flex-col gap-3 w-full py-4 ${isArabic ? 'items-end' : 'items-start'}`}>
+                    {(isArabic && currentField.ar?.options?.length
+                      ? currentField.ar.options
+                      : currentField.options
+                    ).map((option: string, idx: number) => {
+                      const englishValue = currentField.options[idx]
+                      const currentAnswer = answers[currentField.id]
+                      const isSelected = currentAnswer === englishValue
+                      return (
+                        <button
+                          key={idx}
+                          type="button"
+                          disabled={submitting}
+                          onClick={submitting ? undefined : () => handleAnswer(englishValue, true)}
+                          className={`
+                            w-full px-5 py-4 rounded-xl border text-left transition-all
+                            disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none
+                            active:scale-[0.99]
+                            ${isArabic ? 'text-right' : 'text-left'}
+                            ${isSelected
+                              ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-medium'
+                              : 'border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-indigo-300 hover:bg-slate-50 dark:hover:bg-slate-900'
+                            }
+                          `}
+                        >
+                          {option}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+
+                {currentField.type === "text" && (
+                  <div className="space-y-4 w-full py-2">
+                    <textarea
+                      rows={4}
+                      value={textVal}
+                      onChange={(e) => setTextVal(e.target.value)}
+                      placeholder={t("textPlaceholder")}
+                      disabled={submitting}
+                      className="flex w-full rounded-xl border border-slate-250 bg-transparent px-4 py-3 text-base shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 text-slate-900 dark:text-slate-100 border-slate-200 dark:border-slate-800"
+                    />
+                    <div className="flex justify-end">
+                      <Button
+                        onClick={handleTextSubmit}
+                        disabled={submitting || !textVal.trim()}
+                        className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold flex items-center gap-1.5 h-11 px-6 rounded-xl shadow-xs"
+                      >
+                        {submitting ? (
+                          <RefreshCw className="size-4 animate-spin" />
+                        ) : (
+                          <>
+                            <span>{t("nextButton")}</span>
+                            <ArrowRight className="size-4" />
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
+            </>
+          )}
         </Card>
       </div>
 
@@ -724,7 +923,7 @@ export function SurveyClient({ session, form, facilitySettings }: SurveyClientPr
                 {t("idleTitle")}
               </h4>
               <p className="text-xs text-muted-foreground">
-                {t("idleSubtitle", { seconds: warningCount })}
+                {t("idleSubtitle", { seconds: toArabicNumerals(warningCount, isArabic ? 'ar' : 'en') })}
               </p>
             </div>
 

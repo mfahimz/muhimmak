@@ -42,7 +42,7 @@ export default async function EditFormPage({ params }: PageProps) {
   // Fetch the specific form
   const { data: form, error: formError } = await supabase
     .from("forms")
-    .select("id, name, description, name_ar, description_ar, status, fields, parent_id")
+    .select("id, name, description, name_ar, description_ar, status, fields, parent_id, type, is_visit_journey")
     .eq("id", id)
     .single()
 

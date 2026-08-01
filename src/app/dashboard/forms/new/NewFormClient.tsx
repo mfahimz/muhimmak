@@ -19,7 +19,14 @@ export function NewFormClient({ userId, types }: NewFormClientProps) {
   const [selectedType, setSelectedType] = React.useState<string | null>(null)
   const [isSaving, setIsSaving] = React.useState(false)
 
-  const handleSave = async (name: string, description: string, fields: BuilderField[], nameAr: string, descriptionAr: string) => {
+  const handleSave = async (
+    name: string,
+    description: string,
+    fields: BuilderField[],
+    nameAr: string,
+    descriptionAr: string,
+    isVisitJourney: boolean
+  ) => {
     if (!selectedType) return
     setIsSaving(true)
     const supabase = createClient()
@@ -31,6 +38,7 @@ export function NewFormClient({ userId, types }: NewFormClientProps) {
         fields,
         name_ar: nameAr,
         description_ar: descriptionAr,
+        is_visit_journey: isVisitJourney,
         status: "active", // Save as active by default so it's ready to use
         created_by: userId,
         parent_id: null, // Root version
@@ -68,6 +76,7 @@ export function NewFormClient({ userId, types }: NewFormClientProps) {
 
   return (
     <FormBuilder
+      formType={selectedType}
       isSaving={isSaving}
       onSave={handleSave}
       onCancel={handleCancel}

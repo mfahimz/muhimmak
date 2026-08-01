@@ -18,9 +18,14 @@ import {
   Clock,
   Award,
   MessageSquare,
+  LogIn,
+  LogOut,
+  Link2,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { toArabicNumerals } from "@/lib/utils/arabic-numerals";
+import type { VisitScoreDetails } from "@/server/services/sessions.service";
 
 interface SessionDetailClientProps {
   session: any;
@@ -31,8 +36,10 @@ interface SessionDetailClientProps {
   creatorName: string;
   role: string;
   showPlate: boolean;
+  plateNumber?: string | null;
   aiSummary: string;
   computedScore: number | null;
+  visitScoreDetails?: VisitScoreDetails | null;
   threshold: number;
 }
 
@@ -45,16 +52,19 @@ export default function SessionDetailClient({
   creatorName,
   role,
   showPlate,
+  plateNumber,
   aiSummary,
   computedScore,
+  visitScoreDetails,
   threshold,
 }: SessionDetailClientProps) {
   const t = useTranslations("Sessions");
+  const tNumeric = useTranslations("NumericScale");
   const locale = useLocale();
 
   const formatDateTime = (dateStr: string | null) => {
     if (!dateStr) return "—";
-    return new Date(dateStr).toLocaleString(locale === "ar" ? "ar-AE" : "en-US", {
+    const formatted = new Date(dateStr).toLocaleString(locale === "ar" ? "ar-AE" : "en-US", {
       year: "numeric",
       month: "short",
       day: "numeric",
@@ -62,6 +72,7 @@ export default function SessionDetailClient({
       minute: "2-digit",
       hour12: true,
     });
+    return toArabicNumerals(formatted, locale);
   };
 
   const getStatusBadge = (status: string) => {
@@ -118,6 +129,12 @@ export default function SessionDetailClient({
             Star Rating
           </span>
         );
+      case "numeric_scale":
+        return (
+          <span className="inline-flex items-center gap-1 rounded-full bg-orange-50 dark:bg-orange-950/40 px-2.5 py-0.5 text-[11px] font-medium text-orange-700 dark:text-orange-300 border border-orange-200/50">
+            {tNumeric("typeLabel")}
+          </span>
+        );
       case "multiple_choice":
         return (
           <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 dark:bg-blue-950/40 px-2.5 py-0.5 text-[11px] font-medium text-blue-700 dark:text-blue-300 border border-blue-200/50">
@@ -135,6 +152,10 @@ export default function SessionDetailClient({
         return null;
     }
   };
+
+  const displayScore = visitScoreDetails?.visitScore ?? computedScore;
+  const isVisitJourney = Boolean(session.visit_stage || visitScoreDetails?.isLinked);
+  const displayCreatorName = session?.channel === "public_qr" ? "Public QR" : creatorName;
 
   return (
     <div className="flex flex-1 flex-col gap-6 p-4 lg:p-6 bg-background text-start max-w-5xl mx-auto w-full animate-fade-in">
@@ -160,7 +181,21 @@ export default function SessionDetailClient({
               ID: {session.id}
             </p>
           </div>
-          <div>{getStatusBadge(session.status)}</div>
+          <div className="flex items-center gap-2">
+            {session.visit_stage === "drop_off" && (
+              <span className="inline-flex items-center gap-1 rounded-md bg-indigo-50 dark:bg-indigo-950/40 px-2.5 py-1 text-xs font-semibold text-indigo-700 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800">
+                <LogIn className="size-3.5" />
+                Drop-off Stage
+              </span>
+            )}
+            {session.visit_stage === "pick_up" && (
+              <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 dark:bg-emerald-950/40 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800">
+                <LogOut className="size-3.5" />
+                Pick-up Stage
+              </span>
+            )}
+            {getStatusBadge(session.status)}
+          </div>
         </div>
       </div>
 
@@ -199,7 +234,7 @@ export default function SessionDetailClient({
               </span>
               <p className="text-sm font-medium text-foreground flex items-center gap-1.5">
                 <User className="size-3.5 text-muted-foreground" />
-                {creatorName}
+                {displayCreatorName}
               </p>
             </div>
 
@@ -243,8 +278,25 @@ export default function SessionDetailClient({
                 </span>
                 <p className="text-sm font-medium text-foreground flex items-center gap-1.5 font-mono">
                   <Car className="size-3.5 text-muted-foreground" />
-                  {session.plate_number_encrypted || "—"}
+                  {plateNumber || "—"}
                 </p>
+              </div>
+            )}
+
+            {visitScoreDetails?.isLinked && visitScoreDetails.partnerSession && (
+              <div className="space-y-1 col-span-1 md:col-span-2">
+                <span className="text-xs font-semibold uppercase text-indigo-600 dark:text-indigo-400 tracking-wider block">
+                  Linked Visit Stage
+                </span>
+                <Link
+                  href={`/dashboard/sessions/${visitScoreDetails.partnerSession.id}`}
+                  className="inline-flex items-center gap-2 p-2 rounded-xl bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-200/80 dark:border-indigo-800 text-xs font-semibold text-indigo-700 dark:text-indigo-300 hover:underline transition"
+                >
+                  <Link2 className="size-3.5" />
+                  <span>
+                    Linked to {visitScoreDetails.partnerSession.visit_stage === "drop_off" ? "Drop-off" : "Pick-up"} session ({formatDateTime(visitScoreDetails.partnerSession.created_at)})
+                  </span>
+                </Link>
               </div>
             )}
           </div>
@@ -252,12 +304,19 @@ export default function SessionDetailClient({
       </Card>
 
       {/* SECTION 3 — Score card */}
-      {computedScore !== null && (
+      {displayScore !== null && (
         <Card className="border border-border shadow-xs bg-card rounded-2xl overflow-hidden">
           <CardHeader className="bg-muted/10 border-b border-border/60 pb-3">
-            <CardTitle className="text-base font-bold flex items-center gap-2 text-foreground">
-              <Award className="size-4 text-amber-500" />
-              <span>{t("scoreLabel")}</span>
+            <CardTitle className="text-base font-bold flex items-center justify-between text-foreground">
+              <div className="flex items-center gap-2">
+                <Award className="size-4 text-amber-500" />
+                <span>{visitScoreDetails?.isLinked ? "Visit Blended Satisfaction Score" : t("scoreLabel")}</span>
+              </div>
+              {visitScoreDetails?.isLinked && (
+                <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                  Combined Journey
+                </span>
+              )}
             </CardTitle>
           </CardHeader>
           <CardContent className="p-6">
@@ -265,25 +324,27 @@ export default function SessionDetailClient({
               <div className="flex items-center gap-4">
                 <div
                   className={`size-16 rounded-2xl flex items-center justify-center border font-bold text-2xl tabular-nums shadow-xs ${
-                    computedScore >= threshold
+                    displayScore >= threshold
                       ? "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800"
-                      : computedScore >= 50
+                      : displayScore >= 50
                       ? "bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-800"
                       : "bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-800"
                   }`}
                 >
-                  {computedScore}%
+                  {toArabicNumerals(displayScore, locale)}%
                 </div>
                 <div>
                   <h4 className="text-base font-bold text-foreground">
-                    {computedScore >= threshold
-                      ? "High Satisfaction"
-                      : computedScore >= 50
-                      ? "Moderate Satisfaction"
-                      : "Low Satisfaction"}
+                    {displayScore >= threshold
+                      ? t("satisfactionHigh")
+                      : displayScore >= 50
+                      ? t("satisfactionModerate")
+                      : t("satisfactionLow")}
                   </h4>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    {computedScore >= threshold
+                    {visitScoreDetails?.isLinked
+                      ? `Blended score averaging Drop-off (${visitScoreDetails.ownScore ?? visitScoreDetails.partnerScore}%) and Pick-up (${visitScoreDetails.partnerScore ?? visitScoreDetails.ownScore}%) stages.`
+                      : displayScore >= threshold
                       ? t("aboveThreshold")
                       : t("belowThreshold")}
                   </p>
@@ -335,7 +396,7 @@ export default function SessionDetailClient({
                   >
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                       <h4 className="text-sm font-bold text-foreground">
-                        {field.label || `Question ${idx + 1}`}
+                        {field.label || t("questionNumber", { number: idx + 1 })}
                       </h4>
                       <div>{getFieldTypeBadge(field.type)}</div>
                     </div>
@@ -357,7 +418,7 @@ export default function SessionDetailClient({
                             ))}
                           </div>
                           <span className="text-sm font-semibold text-foreground tabular-nums ml-2">
-                            {answer} / 5
+                            {toArabicNumerals(answer, locale)} / {toArabicNumerals(5, locale)}
                           </span>
                         </div>
                       )}
@@ -374,9 +435,16 @@ export default function SessionDetailClient({
                         </div>
                       )}
 
+                      {field.type === "numeric_scale" && (
+                        <span className="text-sm font-semibold text-foreground tabular-nums">
+                          {tNumeric("displayFormat", { value: toArabicNumerals(answer, locale) })}
+                        </span>
+                      )}
+
                       {field.type !== "star_rating" &&
                         field.type !== "multiple_choice" &&
-                        field.type !== "text" && (
+                        field.type !== "text" &&
+                        field.type !== "numeric_scale" && (
                           <p className="text-sm font-medium text-foreground">
                             {String(answer)}
                           </p>

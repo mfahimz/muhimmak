@@ -1,14 +1,16 @@
 "use client"
 
 import * as React from "react"
-import { ArrowUp, ArrowDown, Trash2, Plus, X, Star, FileText, List, Sparkles, GitBranch, ChevronDown, ChevronUp } from "lucide-react"
-import { useTranslations } from "next-intl"
+import { ArrowUp, ArrowDown, Trash2, Plus, X, Star, FileText, List, Sparkles, GitBranch, ChevronDown, ChevronUp, LogIn, LogOut, AlertTriangle } from "lucide-react"
+import { useTranslations, useLocale } from "next-intl"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Switch } from "@/components/ui/switch"
 import { toast } from "sonner"
+import { toArabicNumerals } from "@/lib/utils/arabic-numerals"
 
 export type FieldCondition = {
   fieldId: string
@@ -19,7 +21,7 @@ export type FieldCondition = {
 export interface BuilderField {
   id: string
   order: number
-  type: "star_rating" | "text" | "multiple_choice"
+  type: "star_rating" | "text" | "multiple_choice" | "numeric_scale"
   label: string
   required: boolean
   options: string[]
@@ -27,16 +29,26 @@ export interface BuilderField {
   weight?: number
   optionScores?: number[]
   ar?: { label: string; options: string[] }
+  visit_stage?: 'drop_off' | 'pick_up'
 }
 
 export interface FormBuilderProps {
+  formType?: string | null
   initialName?: string
   initialDescription?: string
   initialNameAr?: string
   initialDescriptionAr?: string
   initialFields?: BuilderField[]
+  initialIsVisitJourney?: boolean
   isSaving?: boolean
-  onSave: (name: string, description: string, fields: BuilderField[], nameAr: string, descriptionAr: string) => void
+  onSave: (
+    name: string,
+    description: string,
+    fields: BuilderField[],
+    nameAr: string,
+    descriptionAr: string,
+    isVisitJourney: boolean
+  ) => void
   onCancel: () => void
 }
 
@@ -48,17 +60,25 @@ const generateUUID = () => {
 }
 
 export function FormBuilder({
+  formType = null,
   initialName = "",
   initialDescription = "",
   initialNameAr = "",
   initialDescriptionAr = "",
   initialFields = [],
+  initialIsVisitJourney = false,
   isSaving = false,
   onSave,
   onCancel,
 }: FormBuilderProps) {
   const t = useTranslations("Forms")
   const tAI = useTranslations("FormBuilder")
+  const locale = useLocale()
+
+  const isTypeB = formType === "smart" || formType === "type_b"
+  const [isVisitJourney, setIsVisitJourney] = React.useState<boolean>(isTypeB ? initialIsVisitJourney : false)
+  const [stageTab, setStageTab] = React.useState<'drop_off' | 'pick_up'>('drop_off')
+  const [showConfirmTurnOffModal, setShowConfirmTurnOffModal] = React.useState<boolean>(false)
   
   const [name, setName] = React.useState(initialName)
   const [description, setDescription] = React.useState(initialDescription)
@@ -73,6 +93,77 @@ export function FormBuilder({
   const [isSuggestingNext, setIsSuggestingNext] = React.useState(false)
   const [aiSuggestNextError, setAiSuggestNextError] = React.useState<string | null>(null)
   const [isSuggestingBranching, setIsSuggestingBranching] = React.useState(false)
+
+  // AI Form Generator (Type C) States
+  const [isAiModalOpen, setIsAiModalOpen] = React.useState(false)
+  const [aiModalDescription, setAiModalDescription] = React.useState("")
+  const [aiModalCountMode, setAiModalCountMode] = React.useState<'number' | 'ai'>('number')
+  const [aiModalQuestionCount, setAiModalQuestionCount] = React.useState<number>(5)
+  const [isAiModalGenerating, setIsAiModalGenerating] = React.useState(false)
+  const [showAiConfirmReplace, setShowAiConfirmReplace] = React.useState(false)
+
+  const executeAiGeneration = async () => {
+    if (!aiModalDescription.trim()) return
+    setIsAiModalGenerating(true)
+    try {
+      const payload = {
+        description: aiModalDescription.trim(),
+        questionCount: aiModalCountMode === 'ai' ? 'ai' : aiModalQuestionCount,
+      }
+      const response = await fetch("/api/v1/forms/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      })
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}))
+        throw new Error(errData.error || tAI("aiModal.errorToast"))
+      }
+
+      const data = await response.json()
+      if (!data.fields || !Array.isArray(data.fields)) {
+        throw new Error(tAI("aiModal.errorToast"))
+      }
+
+      const mappedFields: BuilderField[] = data.fields.map((f: any, idx: number) => {
+        const isMultipleChoice = f.type === "multiple_choice"
+        const opts = Array.isArray(f.options) ? f.options : []
+        return {
+          id: crypto.randomUUID(),
+          order: idx + 1,
+          type: f.type,
+          label: f.label || "",
+          required: true,
+          options: opts,
+          dependsOn: null,
+          weight: f.weight ?? 0,
+          optionScores: isMultipleChoice ? new Array(opts.length).fill(0) : undefined,
+        }
+      })
+
+      setFields(mappedFields)
+      setIsAiModalOpen(false)
+      setShowAiConfirmReplace(false)
+      setActiveTab('en')
+      toast.success(tAI("aiModal.successToast"))
+    } catch (err: any) {
+      console.error("Generate with AI error:", err)
+      toast.error(err.message || tAI("aiModal.errorToast"))
+    } finally {
+      setIsAiModalGenerating(false)
+    }
+  }
+
+  const handleAiModalSubmitClick = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!aiModalDescription.trim()) return
+    if (fields.length > 0 && !showAiConfirmReplace) {
+      setShowAiConfirmReplace(true)
+      return
+    }
+    executeAiGeneration()
+  }
 
   // Bilingual (Arabic) states
   const [activeTab, setActiveTab] = React.useState<'en' | 'ar'>('en')
@@ -89,27 +180,83 @@ export function FormBuilder({
     fields: { id: string; ar: { label: string; options: string[] } }[]
   } | null>(null)
 
+  // Stage field categorizations
+  const dropOffFields = React.useMemo(() => {
+    return fields.filter(f => !f.visit_stage || f.visit_stage === 'drop_off')
+  }, [fields])
+
+  const pickUpFields = React.useMemo(() => {
+    return fields.filter(f => f.visit_stage === 'pick_up')
+  }, [fields])
+
+  const currentStageFields = React.useMemo(() => {
+    if (!isVisitJourney) return fields
+    return stageTab === 'drop_off' ? dropOffFields : pickUpFields
+  }, [isVisitJourney, stageTab, fields, dropOffFields, pickUpFields])
+
   // Compute weights total
   const scoreableFields = React.useMemo(() => {
-    return fields.filter(f => f.type === "star_rating" || f.type === "multiple_choice" || f.type === "text")
+    return fields.filter(f => f.type === "star_rating" || f.type === "multiple_choice" || f.type === "text" || f.type === "numeric_scale")
   }, [fields])
 
   const totalWeight = React.useMemo(() => {
     return scoreableFields.reduce((sum, f) => sum + (f.weight || 0), 0)
   }, [scoreableFields])
 
+  const dropOffScoreable = React.useMemo(() => {
+    return dropOffFields.filter(f => f.type === "star_rating" || f.type === "multiple_choice" || f.type === "text" || f.type === "numeric_scale")
+  }, [dropOffFields])
+
+  const dropOffTotalWeight = React.useMemo(() => {
+    return dropOffScoreable.reduce((sum, f) => sum + (f.weight || 0), 0)
+  }, [dropOffScoreable])
+
+  const pickUpScoreable = React.useMemo(() => {
+    return pickUpFields.filter(f => f.type === "star_rating" || f.type === "multiple_choice" || f.type === "text" || f.type === "numeric_scale")
+  }, [pickUpFields])
+
+  const pickUpTotalWeight = React.useMemo(() => {
+    return pickUpScoreable.reduce((sum, f) => sum + (f.weight || 0), 0)
+  }, [pickUpFields])
+
+  const activeScoreableFields = React.useMemo(() => {
+    if (!isVisitJourney) return scoreableFields
+    return stageTab === 'drop_off' ? dropOffScoreable : pickUpScoreable
+  }, [isVisitJourney, stageTab, scoreableFields, dropOffScoreable, pickUpScoreable])
+
+  const activeTotalWeight = React.useMemo(() => {
+    if (!isVisitJourney) return totalWeight
+    return stageTab === 'drop_off' ? dropOffTotalWeight : pickUpTotalWeight
+  }, [isVisitJourney, stageTab, totalWeight, dropOffTotalWeight, pickUpTotalWeight])
+
   const isSuggestReady = React.useMemo(() => {
-    const allLabelsFilled = scoreableFields.every(f => f.label.trim() !== "")
-    const allOptionsFilled = scoreableFields.every(f => {
+    const allLabelsFilled = activeScoreableFields.every(f => f.label.trim() !== "")
+    const allOptionsFilled = activeScoreableFields.every(f => {
       if (f.type !== "multiple_choice") return true
       return f.options.length >= 2 && f.options.every(opt => opt.trim() !== "")
     })
     return allLabelsFilled && allOptionsFilled
-  }, [scoreableFields])
+  }, [activeScoreableFields])
 
   const missingAr = React.useMemo(() => {
     return fields.some(f => !f.ar?.label?.trim())
   }, [fields])
+
+  const handleToggleVisitJourney = (checked: boolean) => {
+    if (!checked) {
+      const hasPickUpFields = fields.some(f => f.visit_stage === 'pick_up')
+      if (hasPickUpFields) {
+        setShowConfirmTurnOffModal(true)
+        return
+      }
+    }
+    setIsVisitJourney(checked)
+  }
+
+  const handleConfirmTurnOffVisitJourney = () => {
+    setIsVisitJourney(false)
+    setShowConfirmTurnOffModal(false)
+  }
 
   // Add a new question field
   const handleAddQuestion = () => {
@@ -121,7 +268,8 @@ export function FormBuilder({
       required: true,
       options: [],
       dependsOn: null,
-      weight: 0, // Text questions now default to 0 weight but can be configured
+      weight: 0,
+      visit_stage: isVisitJourney ? stageTab : undefined,
     }
     setFields([...fields, newField])
   }
@@ -129,7 +277,6 @@ export function FormBuilder({
   // Delete a question field
   const handleDeleteQuestion = (id: string) => {
     const updated = fields.filter((f) => f.id !== id)
-    // Re-index orders
     const reindexed = updated.map((f, index) => ({
       ...f,
       order: index + 1,
@@ -146,13 +293,16 @@ export function FormBuilder({
       fields.map((f) => {
         if (f.id === id) {
           const next = { ...f, ...updates }
-          // If type changes
           if (updates.type) {
             if (updates.type === "text") {
               next.weight = f.weight ?? 0
               delete next.optionScores
               next.options = []
             } else if (updates.type === "star_rating") {
+              next.weight = f.weight ?? 0
+              delete next.optionScores
+              next.options = []
+            } else if (updates.type === "numeric_scale") {
               next.weight = f.weight ?? 0
               delete next.optionScores
               next.options = []
@@ -171,26 +321,23 @@ export function FormBuilder({
     )
   }
 
-  // Move a question field up or down
+  // Move a question field up or down within current list
   const handleMoveField = (index: number, direction: "up" | "down") => {
+    const list = isVisitJourney ? currentStageFields : fields
     if (direction === "up" && index === 0) return
-    if (direction === "down" && index === fields.length - 1) return
+    if (direction === "down" && index === list.length - 1) return
 
     const targetIndex = direction === "up" ? index - 1 : index + 1
-    const updated = [...fields]
+    const currentItem = list[index]
+    const targetItem = list[targetIndex]
 
-    // Swap elements
-    const temp = updated[index]
-    updated[index] = updated[targetIndex]
-    updated[targetIndex] = temp
-
-    // Re-index order numbers
-    const reindexed = updated.map((f, idx) => ({
-      ...f,
-      order: idx + 1,
-    }))
-
-    setFields(reindexed)
+    setFields(prev => {
+      return prev.map(f => {
+        if (f.id === currentItem.id) return { ...f, order: targetItem.order }
+        if (f.id === targetItem.id) return { ...f, order: currentItem.order }
+        return f
+      })
+    })
   }
 
   // Add option to a multiple choice field
@@ -238,15 +385,12 @@ export function FormBuilder({
       const newScores = f.optionScores ? [...f.optionScores] : []
       const newArOptions = f.ar?.options ? [...f.ar.options] : []
 
-      // Swap English options
       ;[newOptions[fromIndex], newOptions[toIndex]] = [newOptions[toIndex], newOptions[fromIndex]]
 
-      // Swap scores in sync
       if (newScores.length > 0) {
         ;[newScores[fromIndex], newScores[toIndex]] = [newScores[toIndex], newScores[fromIndex]]
       }
 
-      // Swap Arabic options in sync (bilingual safety)
       if (newArOptions.length > Math.max(fromIndex, toIndex)) {
         ;[newArOptions[fromIndex], newArOptions[toIndex]] = [newArOptions[toIndex], newArOptions[fromIndex]]
       }
@@ -259,17 +403,15 @@ export function FormBuilder({
       }
     }))
 
-    // Mark field as stale so staff knows to review Arabic tab
     setStaleFieldIds(prev => new Set(prev).add(fieldId))
-
-    // Set reorder warning for this field
     setReorderedFieldIds(prev => new Set(prev).add(fieldId))
   }
 
   function getConditionSources(currentFieldIndex: number): BuilderField[] {
-    return fields
+    const list = isVisitJourney ? currentStageFields : fields
+    return list
       .slice(0, currentFieldIndex)
-      .filter(f => f.type === 'multiple_choice' || f.type === 'star_rating')
+      .filter(f => f.type === 'multiple_choice' || f.type === 'star_rating' || f.type === 'numeric_scale')
   }
 
   function handleUpdateCondition(
@@ -319,16 +461,40 @@ export function FormBuilder({
     )
   }
 
+  const handleUpdateArabicLabel = (fieldId: string, val: string) => {
+    setFields(prev => prev.map(f =>
+      f.id === fieldId
+        ? { ...f, ar: { label: val, options: f.ar?.options ?? [] } }
+        : f
+    ))
+    setStaleFieldIds(prev => {
+      const next = new Set(prev)
+      next.delete(fieldId)
+      return next
+    })
+  }
+
+  const handleUpdateArabicOption = (fieldId: string, optIdx: number, val: string) => {
+    setFields(prev => prev.map(f => {
+      if (f.id !== fieldId) return f
+      const updatedOptions = [...(f.ar?.options ?? [])]
+      while (updatedOptions.length <= optIdx) updatedOptions.push('')
+      updatedOptions[optIdx] = val
+      return { ...f, ar: { label: f.ar?.label ?? '', options: updatedOptions } }
+    }))
+  }
+
   // Suggest weights from DeepSeek API
   const handleSuggestWeights = async () => {
-    if (scoreableFields.length < 2) return
+    const targetFields = isVisitJourney ? activeScoreableFields : scoreableFields
+    if (targetFields.length < 2) return
     setSuggesting(true)
     try {
       const response = await fetch("/api/v1/forms/suggest-weights", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          questions: scoreableFields.map((f) => ({
+          questions: targetFields.map((f) => ({
             id: f.id,
             label: f.label,
             type: f.type,
@@ -343,10 +509,9 @@ export function FormBuilder({
 
       const data = await response.json()
 
-      // Apply suggestions to fields
       setFields((prev) =>
         prev.map((f) => {
-          if (f.type === "star_rating" || f.type === "multiple_choice" || f.type === "text") {
+          if (targetFields.some(tf => tf.id === f.id)) {
             const suggestedWeight = data.weights?.[f.id] ?? 0
             const suggestedScores = data.optionScores?.[f.id] ?? []
             return {
@@ -402,6 +567,7 @@ export function FormBuilder({
           dependsOn: null,
           weight: 0,
           optionScores: isMultipleChoice ? new Array((q.options || []).length).fill(0) : undefined,
+          visit_stage: isVisitJourney ? stageTab : undefined,
         }
       })
 
@@ -416,12 +582,13 @@ export function FormBuilder({
 
   // AI Assistant - Suggest Next Question
   const handleSuggestNextQuestion = async () => {
-    if (fields.length === 0) return
+    const list = isVisitJourney ? currentStageFields : fields
+    if (list.length === 0) return
     setIsSuggestingNext(true)
     setAiSuggestNextError(null)
 
     try {
-      const existingQuestions = fields.map(f => ({
+      const existingQuestions = list.map(f => ({
         type: f.type,
         label: f.label,
         options: f.options
@@ -454,6 +621,7 @@ export function FormBuilder({
         dependsOn: null,
         weight: 0,
         optionScores: isMultipleChoice ? new Array((q.options || []).length).fill(0) : undefined,
+        visit_stage: isVisitJourney ? stageTab : undefined,
       }
 
       setFields([...fields, newField])
@@ -467,14 +635,15 @@ export function FormBuilder({
 
   // AI Assistant — Suggest Branching Logic
   const handleSuggestBranching = async () => {
-    if (fields.length <= 1) return
+    const list = isVisitJourney ? currentStageFields : fields
+    if (list.length <= 1) return
     setIsSuggestingBranching(true)
     try {
       const response = await fetch("/api/v1/forms/suggest-branching", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          questions: fields.map(f => ({
+          questions: list.map(f => ({
             id: f.id,
             order: f.order,
             type: f.type,
@@ -603,20 +772,37 @@ export function FormBuilder({
     })
   }
 
-  // Handle save
+  // Handle save with validation guards
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!name.trim()) return
 
-    // Validate weights sum
-    if (scoreableFields.length > 0) {
-      if (totalWeight !== 100) {
+    if (isVisitJourney) {
+      // 1. Guard: must have at least 1 scoreable question in EACH tab
+      if (dropOffScoreable.length === 0 || pickUpScoreable.length === 0) {
+        toast.error(tAI("validationBothStagesRequired"))
+        return
+      }
+
+      // 2. Guard: stage weights must sum to 100% independently
+      if (dropOffScoreable.length > 0 && dropOffTotalWeight !== 100) {
+        toast.error(tAI("validationStageWeightSumError", { stage: tAI("tabDropOff"), total: dropOffTotalWeight }))
+        return
+      }
+
+      if (pickUpScoreable.length > 0 && pickUpTotalWeight !== 100) {
+        toast.error(tAI("validationStageWeightSumError", { stage: tAI("tabPickUp"), total: pickUpTotalWeight }))
+        return
+      }
+    } else {
+      // Non-journey weight sum guard
+      if (scoreableFields.length > 0 && totalWeight !== 100) {
         toast.error(tAI("weightSumError", { total: totalWeight }))
         return
       }
     }
 
-    onSave(name.trim(), description.trim(), fields, nameAr, descriptionAr)
+    onSave(name.trim(), description.trim(), fields, nameAr, descriptionAr, isVisitJourney)
   }
 
   return (
@@ -655,39 +841,129 @@ export function FormBuilder({
         </button>
       </div>
 
-      {activeTab === 'en' && (<>
+      {/* Arabic translation helper header */}
+      {activeTab === 'ar' && (
+        <div className="flex items-center justify-between border border-slate-200 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-950/20 p-4 rounded-2xl shadow-xs mb-4">
+          <h2 className="text-slate-700 dark:text-slate-300 font-medium text-sm">{tAI("arabicPanel.title")}</h2>
+          <div className="flex items-center gap-3">
+            {fields.length === 0 && (
+              <span className="text-xs text-slate-400 dark:text-slate-500">
+                {tAI("arabicPanel.noQuestionsToTranslate")}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={handleTranslateAll}
+              disabled={isTranslating || fields.length === 0}
+              className="border border-indigo-500 text-indigo-600 text-sm px-3 py-1.5 rounded-md hover:bg-indigo-50 dark:hover:bg-indigo-950/20 disabled:opacity-50 transition-colors"
+            >
+              {isTranslating ? (
+                <span className="flex items-center gap-1.5">
+                  <svg className="animate-spin size-3.5" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  {tAI("arabicPanel.translating")}
+                </span>
+              ) : <>{tAI("arabicPanel.translateAll")} ✦</>}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Visit Journey Toggle (Type B only) */}
+      {isTypeB && (
+        <Card className="border border-indigo-100 dark:border-indigo-900/40 bg-indigo-50/40 dark:bg-indigo-950/20 p-4 rounded-2xl shadow-xs mb-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="size-9 rounded-xl bg-indigo-100 dark:bg-indigo-900/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+                <GitBranch className="size-5" />
+              </div>
+              <div>
+                <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                  {tAI("visitJourneyToggle")}
+                </h4>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  {tAI("visitJourneyDesc")}
+                </p>
+              </div>
+            </div>
+            <Switch
+              checked={isVisitJourney}
+              onCheckedChange={handleToggleVisitJourney}
+            />
+          </div>
+        </Card>
+      )}
+
       {/* Name and Description Panel */}
       <Card className="border border-slate-200 shadow-xs dark:border-slate-800">
         <CardContent className="p-6 space-y-4">
           <div className="space-y-2">
             <Label htmlFor="form-name" className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-              {t("name")} *
+              {activeTab === 'en' ? `${t("name")} *` : `${tAI("arabicPanel.namePlaceholder")} *`}
             </Label>
             <Input
               id="form-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder={t("placeholderName")}
+              value={activeTab === 'en' ? name : nameAr}
+              onChange={(e) => activeTab === 'en' ? setName(e.target.value) : setNameAr(e.target.value)}
+              placeholder={activeTab === 'en' ? t("placeholderName") : "اسم النموذج"}
               required
-              className="h-10 border-slate-200 focus-visible:ring-indigo-500 text-slate-900 dark:text-slate-100"
+              dir={activeTab === 'ar' ? "rtl" : "ltr"}
+              className={`h-10 border-slate-200 focus-visible:ring-indigo-500 text-slate-900 dark:text-slate-100 ${
+                activeTab === 'ar' ? "text-right" : ""
+              }`}
             />
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="form-desc" className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-              {t("placeholderDescription")}
+              {activeTab === 'en' ? t("placeholderDescription") : tAI("arabicPanel.descriptionPlaceholder")}
             </Label>
             <textarea
               id="form-desc"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder={t("placeholderDescription")}
+              value={activeTab === 'en' ? description : descriptionAr}
+              onChange={(e) => activeTab === 'en' ? setDescription(e.target.value) : setDescriptionAr(e.target.value)}
+              placeholder={activeTab === 'en' ? t("placeholderDescription") : "وصف النموذج"}
               rows={3}
-              className="flex w-full rounded-md border border-slate-200 bg-transparent px-3 py-2 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 text-slate-900 dark:text-slate-100 border-slate-200 dark:border-slate-800"
+              dir={activeTab === 'ar' ? "rtl" : "ltr"}
+              className={`flex w-full rounded-md border border-slate-200 bg-transparent px-3 py-2 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 text-slate-900 dark:text-slate-100 border-slate-200 dark:border-slate-800 ${
+                activeTab === 'ar' ? "text-right" : ""
+              }`}
             />
           </div>
         </CardContent>
       </Card>
+
+      {/* Stage Tab Bar (when Visit Journey is enabled) */}
+      {isVisitJourney && (
+        <div className="flex border-b border-slate-200 dark:border-slate-800 my-4 font-semibold text-xs">
+          <button
+            type="button"
+            onClick={() => setStageTab('drop_off')}
+            className={`px-4 py-2.5 flex items-center gap-2 border-b-2 transition ${
+              stageTab === 'drop_off'
+                ? 'border-indigo-600 text-indigo-600 font-bold'
+                : 'border-transparent text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            <LogIn className="size-4" />
+            <span>{tAI("tabDropOff")} ({dropOffFields.length})</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setStageTab('pick_up')}
+            className={`px-4 py-2.5 flex items-center gap-2 border-b-2 transition ${
+              stageTab === 'pick_up'
+                ? 'border-indigo-600 text-indigo-600 font-bold'
+                : 'border-transparent text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            <LogOut className="size-4" />
+            <span>{tAI("tabPickUp")} ({pickUpFields.length})</span>
+          </button>
+        </div>
+      )}
 
       {/* Questions Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -695,23 +971,38 @@ export function FormBuilder({
           <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
             <span>{t("questions")}</span>
             <span className="inline-flex items-center justify-center size-6 text-xs font-semibold bg-indigo-50 text-indigo-600 rounded-full dark:bg-indigo-950/50 dark:text-indigo-400">
-              {fields.length}
+              {currentStageFields.length}
             </span>
           </h3>
 
-          {scoreableFields.length > 0 && (
+          {activeScoreableFields.length > 0 && (
             <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold ${
-              totalWeight === 100
+              activeTotalWeight === 100
                 ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400"
                 : "bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400"
             }`}>
-              {tAI("weightSumLabel")} {totalWeight}% / 100%
+              {tAI("weightSumLabel")} {toArabicNumerals(activeTotalWeight, locale)}% / {toArabicNumerals(100, locale)}%
             </span>
           )}
         </div>
 
         <div className="flex items-center gap-2">
-          {scoreableFields.length >= 2 && (
+          {formType === 'ai' && (
+            <Button
+              type="button"
+              onClick={() => {
+                setShowAiConfirmReplace(false)
+                setIsAiModalOpen(true)
+              }}
+              variant="outline"
+              className="flex items-center gap-1.5 border-purple-200 text-purple-600 hover:bg-purple-50/50 hover:text-purple-700 dark:border-purple-900/50 dark:text-purple-400 dark:hover:bg-purple-950/20"
+            >
+              <Sparkles className="size-4 text-purple-500" />
+              <span>{tAI("aiModal.generateWithAi")}</span>
+            </Button>
+          )}
+
+          {activeScoreableFields.length >= 2 && (
             <div className="flex flex-col items-end gap-1">
               <Button
                 type="button"
@@ -731,7 +1022,7 @@ export function FormBuilder({
             </div>
           )}
 
-          {fields.length > 1 && (
+          {currentStageFields.length > 1 && (
             <Button
               type="button"
               onClick={handleSuggestBranching}
@@ -761,40 +1052,42 @@ export function FormBuilder({
       </div>
 
       {/* Questions List */}
-      {fields.length === 0 ? (
+      {currentStageFields.length === 0 ? (
         <div className="space-y-6">
           {/* Touchpoint 1: AI Goal Generator Panel */}
-          <Card className="border border-indigo-100 bg-indigo-50/20 dark:border-indigo-900/40 dark:bg-indigo-950/5 rounded-xl">
-            <CardContent className="p-6 space-y-4">
-              <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 font-semibold text-sm">
-                <Sparkles className="size-4" />
-                <span>{tAI("aiPanelTitle")}</span>
-              </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400 leading-normal">
-                {tAI("aiPanelSubtitle")}
-              </p>
-              <textarea
-                value={aiGoal}
-                onChange={(e) => setAiGoal(e.target.value)}
-                placeholder={tAI("aiGoalPlaceholder")}
-                rows={3}
-                className="flex w-full rounded-md border border-slate-200 bg-transparent px-3 py-2 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-indigo-500 text-slate-900 dark:text-slate-100 border-slate-200 dark:border-slate-800"
-              />
-              {aiGoalError && (
-                <p className="text-xs text-rose-500 font-medium">{aiGoalError}</p>
-              )}
-              <div className="flex justify-end">
-                <Button
-                  type="button"
-                  onClick={handleGenerateQuestions}
-                  disabled={isGenerating || !aiGoal.trim()}
-                  className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold shadow-xs"
-                >
-                  {isGenerating ? tAI("aiGenerating") : tAI("aiGenerateButton")}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+          {formType !== 'ai' && (
+            <Card className="border border-indigo-100 bg-indigo-50/20 dark:border-indigo-900/40 dark:bg-indigo-950/5 rounded-xl">
+              <CardContent className="p-6 space-y-4">
+                <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 font-semibold text-sm">
+                  <Sparkles className="size-4" />
+                  <span>{tAI("aiPanelTitle")}</span>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 leading-normal">
+                  {tAI("aiPanelSubtitle")}
+                </p>
+                <textarea
+                  value={aiGoal}
+                  onChange={(e) => setAiGoal(e.target.value)}
+                  placeholder={tAI("aiGoalPlaceholder")}
+                  rows={3}
+                  className="flex w-full rounded-md border border-slate-200 bg-transparent px-3 py-2 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-indigo-500 text-slate-900 dark:text-slate-100 border-slate-200 dark:border-slate-800"
+                />
+                {aiGoalError && (
+                  <p className="text-xs text-rose-500 font-medium">{aiGoalError}</p>
+                )}
+                <div className="flex justify-end">
+                  <Button
+                    type="button"
+                    onClick={handleGenerateQuestions}
+                    disabled={isGenerating || !aiGoal.trim()}
+                    className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold shadow-xs"
+                  >
+                    {isGenerating ? tAI("aiGenerating") : tAI("aiGenerateButton")}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           <Card className="border border-dashed border-slate-300 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/10 py-12 text-center rounded-xl">
             <CardContent className="flex flex-col items-center justify-center gap-3">
@@ -815,9 +1108,9 @@ export function FormBuilder({
         </div>
       ) : (
         <div className="space-y-4">
-          {fields.map((field, index) => {
+          {currentStageFields.map((field, index) => {
             const isFirst = index === 0
-            const isLast = index === fields.length - 1
+            const isLast = index === currentStageFields.length - 1
 
             return (
               <Card
@@ -854,18 +1147,38 @@ export function FormBuilder({
 
                   {/* Question Config */}
                   <div className="flex-1 space-y-4">
+                    {/* Staleness warning */}
+                    {activeTab === 'ar' && staleFieldIds.has(field.id) && (
+                      <div className="bg-amber-50 dark:bg-amber-950/20 border-l-4 border-amber-400 text-amber-700 dark:text-amber-400 text-[11px] p-2 rounded-lg">
+                        {tAI("arabicPanel.staleWarning")}
+                      </div>
+                    )}
+
                     {/* Question Label, Type row */}
                     <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-start">
                       <div className="md:col-span-8 space-y-1.5">
                         <Label className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                          {t("questionLabel")}
+                          {activeTab === 'en' ? t("questionLabel") : `${t("questionLabel")} (Arabic)`}
                         </Label>
+                        {activeTab === 'ar' && (
+                          <p className="text-xs text-slate-400 mb-1">{field.label || "(Empty English Label)"}</p>
+                        )}
                         <Input
-                          value={field.label}
-                          onChange={(e) => handleUpdateField(field.id, { label: e.target.value })}
-                          placeholder={t("questionLabel")}
+                          value={activeTab === 'en' ? field.label : (field.ar?.label ?? "")}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            if (activeTab === 'en') {
+                              handleUpdateField(field.id, { label: val });
+                            } else {
+                              handleUpdateArabicLabel(field.id, val);
+                            }
+                          }}
+                          placeholder={activeTab === 'en' ? t("questionLabel") : "نص السؤال باللغة العربية"}
                           required
-                          className="h-9 border-slate-200 dark:border-slate-800 focus-visible:ring-indigo-500 text-sm"
+                          dir={activeTab === 'ar' ? "rtl" : "ltr"}
+                          className={`h-9 border-slate-200 dark:border-slate-800 focus-visible:ring-indigo-500 text-sm ${
+                            activeTab === 'ar' ? "text-right" : ""
+                          }`}
                         />
                       </div>
 
@@ -893,6 +1206,12 @@ export function FormBuilder({
                                 {t("starRating")}
                               </span>
                             </SelectItem>
+                            <SelectItem value="numeric_scale">
+                              <span className="flex items-center gap-1.5">
+                                <List className="size-3.5 text-slate-400" />
+                                {t("numericScale")}
+                              </span>
+                            </SelectItem>
                             <SelectItem value="multiple_choice">
                               <span className="flex items-center gap-1.5">
                                 <List className="size-3.5 text-slate-400" />
@@ -905,7 +1224,7 @@ export function FormBuilder({
                     </div>
 
                     {/* Weight scoring field for scoreable questions */}
-                    {(field.type === "star_rating" || field.type === "multiple_choice" || field.type === "text") && (
+                    {(field.type === "star_rating" || field.type === "multiple_choice" || field.type === "text" || field.type === "numeric_scale") && (
                       <div className="space-y-1">
                         <div className="flex items-center gap-2 max-w-[200px] bg-slate-50/50 dark:bg-slate-900/20 px-3 py-1.5 rounded-lg border border-slate-100 dark:border-slate-800/80">
                           <Label htmlFor={`weight-${field.id}`} className="text-xs font-semibold text-slate-500 dark:text-slate-400">
@@ -968,13 +1287,28 @@ export function FormBuilder({
                                   <ChevronDown className="size-3" />
                                 </button>
                               </div>
-                              <Input
-                                value={option}
-                                onChange={(e) => handleUpdateOption(field.id, optIdx, e.target.value)}
-                                className="h-8 border-slate-200 dark:border-slate-800 text-xs py-1 flex-1"
-                                placeholder={t("optionPlaceholder")}
-                                required
-                              />
+                              <div className="flex-1 flex flex-col gap-0.5">
+                                {activeTab === 'ar' && (
+                                  <span className="text-[10px] text-slate-400 ml-1">{option || "(Empty Option)"}</span>
+                                )}
+                                <Input
+                                  value={activeTab === 'en' ? option : (field.ar?.options?.[optIdx] ?? "")}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    if (activeTab === 'en') {
+                                      handleUpdateOption(field.id, optIdx, val);
+                                    } else {
+                                      handleUpdateArabicOption(field.id, optIdx, val);
+                                    }
+                                  }}
+                                  className={`h-8 border-slate-200 dark:border-slate-800 text-xs py-1 w-full ${
+                                    activeTab === 'ar' ? "text-right" : ""
+                                  }`}
+                                  placeholder={activeTab === 'en' ? t("optionPlaceholder") : "الخيار بالعربية"}
+                                  required
+                                  dir={activeTab === 'ar' ? "rtl" : "ltr"}
+                                />
+                              </div>
                               <div className="flex items-center gap-1.5 shrink-0">
                                 <span className="text-[10px] text-slate-400 dark:text-slate-500">{tAI("scoreLabel")}</span>
                                 <Input
@@ -1092,8 +1426,8 @@ export function FormBuilder({
                                     if (!src) return
                                     handleUpdateCondition(field.id, {
                                       fieldId: String(val),
-                                      operator: src.type === 'star_rating' ? ('lte' as const) : ('equals' as const),
-                                      value: src.type === 'star_rating' ? 3 : (src.options[0] ?? ''),
+                                      operator: (src.type === 'star_rating' || src.type === 'numeric_scale') ? ('lte' as const) : ('equals' as const),
+                                      value: src.type === 'star_rating' ? 3 : src.type === 'numeric_scale' ? 5 : (src.options[0] ?? ''),
                                     })
                                   }}
                                 >
@@ -1186,7 +1520,7 @@ export function FormBuilder({
                                           <SelectValue />
                                         </SelectTrigger>
                                         <SelectContent>
-                                          {[1, 2, 3, 4, 5].map(n => (
+                                          {(src.type === 'star_rating' ? [1, 2, 3, 4, 5] : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]).map(n => (
                                             <SelectItem key={n} value={String(n)}>{n}</SelectItem>
                                           ))}
                                         </SelectContent>
@@ -1250,6 +1584,13 @@ export function FormBuilder({
         </div>
       )}
 
+      {/* Save Guard Warning Message */}
+      {missingAr && (
+        <p className="text-rose-600 text-sm mt-4 font-semibold text-center">
+          ⚠️ {tAI("arabicPanel.missingSaveGuard")}
+        </p>
+      )}
+
       {/* Form Buttons */}
       <div className="flex items-center justify-end gap-3 border-t border-slate-200 dark:border-slate-800 pt-5">
         <Button
@@ -1263,202 +1604,211 @@ export function FormBuilder({
         </Button>
         <Button
           type="submit"
-          disabled={isSaving || !name.trim() || fields.length === 0}
+          disabled={isSaving || !name.trim() || fields.length === 0 || missingAr}
           className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold shadow-xs"
         >
           {isSaving ? tAI("savingLabel") : t("save")}
         </Button>
       </div>
-      </>)}
 
-      {activeTab === 'ar' && (
-        <div className="space-y-6">
-          {/* Panel Header */}
-          <div className="flex items-center justify-between">
-            <h2 className="text-slate-700 dark:text-slate-300 font-medium">{tAI("arabicPanel.title")}</h2>
-            <div className="flex items-center gap-3">
-              {fields.length === 0 && (
-                <span className="text-xs text-slate-400 dark:text-slate-500">
-                  {tAI("arabicPanel.noQuestionsToTranslate")}
-                </span>
-              )}
+      {/* Type C AI Form Generator Modal */}
+      {isAiModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl max-w-lg w-full p-6 space-y-5 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <Sparkles className="size-5 text-purple-600 dark:text-purple-400" />
+                <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">
+                  {tAI("aiModal.title")}
+                </h3>
+              </div>
               <button
                 type="button"
-                onClick={handleTranslateAll}
-                disabled={isTranslating || fields.length === 0}
-                className="border border-indigo-500 text-indigo-600 text-sm px-3 py-1.5 rounded-md hover:bg-indigo-50 dark:hover:bg-indigo-950/20 disabled:opacity-50 transition-colors"
+                onClick={() => {
+                  if (!isAiModalGenerating) {
+                    setIsAiModalOpen(false)
+                    setShowAiConfirmReplace(false)
+                  }
+                }}
+                disabled={isAiModalGenerating}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
               >
-                {isTranslating ? (
-                  <span className="flex items-center gap-1.5">
-                    <svg className="animate-spin size-3.5" viewBox="0 0 24 24" fill="none">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                    </svg>
-                    {tAI("arabicPanel.translating")}
-                  </span>
-                ) : <>{tAI("arabicPanel.translateAll")} ✦</>}
+                <X className="size-5" />
               </button>
             </div>
-          </div>
 
-          {/* Form Name (Arabic) */}
-          <div className="space-y-1.5">
-            <Label className="text-sm font-medium text-slate-700 dark:text-slate-300">
-              {tAI("arabicPanel.namePlaceholder")}
-            </Label>
-            <Input
-              value={nameAr}
-              onChange={(e) => setNameAr(e.target.value)}
-              dir="rtl"
-              placeholder="اسم النموذج"
-              className="h-10 border-slate-200 focus-visible:ring-indigo-500 text-slate-900 dark:text-slate-100 text-right"
-            />
-          </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              {tAI("aiModal.subtitle")}
+            </p>
 
-          {/* Form Description (Arabic) */}
-          <div className="space-y-1.5">
-            <Label className="text-sm font-medium text-slate-700 dark:text-slate-300">
-              {tAI("arabicPanel.descriptionPlaceholder")}
-            </Label>
-            <textarea
-              value={descriptionAr}
-              onChange={(e) => setDescriptionAr(e.target.value)}
-              dir="rtl"
-              placeholder="وصف النموذج"
-              rows={3}
-              className="flex w-full rounded-md border border-slate-200 bg-transparent px-3 py-2 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-indigo-500 text-slate-900 dark:text-slate-100 dark:border-slate-800 text-right"
-            />
-          </div>
+            {showAiConfirmReplace ? (
+              <div className="p-4 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 rounded-lg space-y-3">
+                <h4 className="text-sm font-semibold text-amber-800 dark:text-amber-300">
+                  {tAI("aiModal.replaceWarningTitle")}
+                </h4>
+                <p className="text-xs text-amber-700 dark:text-amber-400">
+                  {tAI("aiModal.replaceWarningMessage")}
+                </p>
+                <div className="flex items-center justify-end gap-2 pt-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={isAiModalGenerating}
+                    onClick={() => setShowAiConfirmReplace(false)}
+                  >
+                    {tAI("aiModal.cancel")}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={isAiModalGenerating}
+                    onClick={executeAiGeneration}
+                    className="bg-amber-600 hover:bg-amber-700 text-white font-medium"
+                  >
+                    {isAiModalGenerating ? (
+                      <>
+                        <Sparkles className="size-3.5 mr-1.5 animate-spin" />
+                        {tAI("aiModal.generating")}
+                      </>
+                    ) : (
+                      tAI("aiModal.confirmReplace")
+                    )}
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="ai-desc-input" className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                    {tAI("aiModal.descriptionLabel")} *
+                  </Label>
+                  <textarea
+                    id="ai-desc-input"
+                    value={aiModalDescription}
+                    onChange={(e) => setAiModalDescription(e.target.value)}
+                    placeholder={tAI("aiModal.descriptionPlaceholder")}
+                    rows={3}
+                    disabled={isAiModalGenerating}
+                    className="flex w-full rounded-md border border-slate-200 bg-transparent px-3 py-2 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-indigo-500 text-slate-900 dark:text-slate-100 dark:border-slate-800 disabled:opacity-50"
+                  />
+                </div>
 
-          {/* Questions */}
-          <div>
-            <h3 className="text-sm font-medium text-slate-500 uppercase tracking-wide mt-6 mb-3">
-              {tAI("arabicPanel.questionsHeader")}
-            </h3>
-
-            <div className="space-y-3">
-              {fields.map((field) => (
-                <div
-                  key={field.id}
-                  className="bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-lg p-4"
-                >
-                  {/* English reference */}
-                  <p className="text-xs text-slate-400 mb-2">{field.label}</p>
-
-                  {/* Staleness warning */}
-                  {staleFieldIds.has(field.id) && (
-                    <div className="bg-amber-50 dark:bg-amber-950/20 border-l-4 border-amber-400 text-amber-700 dark:text-amber-400 text-xs p-2 mb-3 rounded-sm">
-                      {tAI("arabicPanel.staleWarning")}
-                    </div>
-                  )}
-
-                  {/* Arabic label input */}
-                  <div className="space-y-1 mb-3">
-                    <Label className="text-xs text-slate-500 dark:text-slate-400">
-                      {tAI("arabicPanel.questionPlaceholder")}
-                    </Label>
-                    <Input
-                      value={field.ar?.label ?? ''}
-                      dir="rtl"
-                      placeholder="نص السؤال"
-                      onChange={(e) => {
-                        const val = e.target.value
-                        setFields(prev => prev.map(f =>
-                          f.id === field.id
-                            ? { ...f, ar: { label: val, options: f.ar?.options ?? [] } }
-                            : f
-                        ))
-                      }}
-                      className="h-9 border-slate-200 dark:border-slate-800 focus-visible:ring-indigo-500 text-sm text-right"
-                    />
-                  </div>
-
-                  {/* Multiple choice options */}
-                  {field.type === 'multiple_choice' && field.options.length > 0 && (
-                    <div className="space-y-2 mb-3 pl-3 border-l-2 border-slate-100 dark:border-slate-800">
-                      {field.options.map((opt, idx) => (
-                        <div key={idx} className="space-y-0.5">
-                          <p className="text-xs text-slate-400 mb-0.5">{opt}</p>
-                          <Input
-                            value={field.ar?.options?.[idx] ?? ''}
-                            dir="rtl"
-                            placeholder="خيار"
-                            onChange={(e) => {
-                              const val = e.target.value
-                              setFields(prev => prev.map(f => {
-                                if (f.id !== field.id) return f
-                                const updatedOptions = [...(f.ar?.options ?? [])]
-                                while (updatedOptions.length <= idx) updatedOptions.push('')
-                                updatedOptions[idx] = val
-                                return { ...f, ar: { label: f.ar?.label ?? '', options: updatedOptions } }
-                              }))
-                            }}
-                            className="h-8 border-slate-200 dark:border-slate-800 text-xs text-right"
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Action row */}
-                  <div className="flex justify-end gap-2 mt-3">
+                <div className="space-y-2">
+                  <Label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                    {tAI("aiModal.countLabel")}
+                  </Label>
+                  <div className="flex items-center gap-3 border border-slate-200 dark:border-slate-800 rounded-lg p-2 bg-slate-50/50 dark:bg-slate-900/50">
                     <button
                       type="button"
-                      disabled={translatingFieldId === field.id}
-                      onClick={() => handleTranslateField(field.id)}
-                      className="text-xs text-slate-500 hover:text-indigo-600 border border-slate-200 dark:border-slate-700 rounded px-2 py-1 transition-colors disabled:opacity-50"
+                      onClick={() => setAiModalCountMode('number')}
+                      disabled={isAiModalGenerating}
+                      className={`flex-1 py-1.5 px-3 rounded-md text-xs font-semibold transition-all ${
+                        aiModalCountMode === 'number'
+                          ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-xs border border-slate-200 dark:border-slate-700'
+                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                      }`}
                     >
-                      {translatingFieldId === field.id ? "..." : `↺ ${tAI("arabicPanel.retranslate")}`}
+                      {tAI("aiModal.countOptionNumber")}
                     </button>
-                    {aiDraftAr && (
-                      <button
-                        type="button"
-                        onClick={() => handleRevertField(field.id)}
-                        title={tAI("arabicPanel.revertToDraft")}
-                        className="text-xs text-slate-500 hover:text-slate-700 border border-slate-200 dark:border-slate-700 rounded px-2 py-1 transition-colors"
-                      >
-                        ⟲ {tAI("arabicPanel.revertToDraft")}
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      onClick={() => setAiModalCountMode('ai')}
+                      disabled={isAiModalGenerating}
+                      className={`flex-1 py-1.5 px-3 rounded-md text-xs font-semibold transition-all ${
+                        aiModalCountMode === 'ai'
+                          ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-xs border border-slate-200 dark:border-slate-700'
+                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                      }`}
+                    >
+                      {tAI("aiModal.countOptionAi")}
+                    </button>
                   </div>
+
+                  {aiModalCountMode === 'number' && (
+                    <div className="flex items-center gap-3 pt-1">
+                      <Input
+                        type="number"
+                        min={3}
+                        max={10}
+                        value={aiModalQuestionCount}
+                        onChange={(e) => setAiModalQuestionCount(Math.min(10, Math.max(3, parseInt(e.target.value) || 3)))}
+                        disabled={isAiModalGenerating}
+                        className="w-24 h-9 text-center font-semibold"
+                      />
+                      <span className="text-xs text-slate-500 dark:text-slate-400">
+                        {tAI("aiModal.countRange")}
+                      </span>
+                    </div>
+                  )}
                 </div>
-              ))}
+
+                <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={isAiModalGenerating}
+                    onClick={() => setIsAiModalOpen(false)}
+                  >
+                    {tAI("aiModal.cancel")}
+                  </Button>
+                  <Button
+                    type="button"
+                    disabled={isAiModalGenerating || !aiModalDescription.trim()}
+                    onClick={handleAiModalSubmitClick}
+                    className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold shadow-xs"
+                  >
+                    {isAiModalGenerating ? (
+                      <>
+                        <Sparkles className="size-4 mr-1.5 animate-spin" />
+                        {tAI("aiModal.generating")}
+                      </>
+                    ) : (
+                      tAI("aiModal.generate")
+                    )}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* CONFIRM TURN OFF VISIT JOURNEY MODAL */}
+      {showConfirmTurnOffModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <Card className="max-w-md w-full border border-amber-200 dark:border-amber-900 shadow-2xl bg-card rounded-2xl p-6 space-y-5">
+            <div className="size-12 rounded-full bg-amber-50 dark:bg-amber-950/40 text-amber-600 flex items-center justify-center mx-auto">
+              <AlertTriangle className="size-6" />
             </div>
-          </div>
 
-          {/* Save Guard */}
-          {missingAr && (
-            <p className="text-rose-600 text-sm mt-2">
-              {tAI("arabicPanel.missingSaveGuard")}
-            </p>
-          )}
+            <div className="text-center space-y-1">
+              <h3 className="text-base font-bold text-foreground">
+                {tAI("confirmTurnOffTitle")}
+              </h3>
+              <p className="text-xs text-muted-foreground leading-normal">
+                {tAI("confirmTurnOffDesc")}
+              </p>
+            </div>
 
-          {/* Save/Cancel Buttons */}
-          <div className="flex items-center justify-end gap-3 border-t border-slate-200 dark:border-slate-800 pt-5">
-            <Button
-              type="button"
-              variant="outline"
-              disabled={isSaving}
-              onClick={onCancel}
-              className="border-slate-200 text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:text-slate-400"
-            >
-              {t("cancel")}
-            </Button>
-            <Button
-              type="button"
-              disabled={isSaving || !name.trim() || fields.length === 0 || missingAr}
-              onClick={() => {
-                if (scoreableFields.length > 0 && totalWeight !== 100) {
-                  toast.error(tAI("weightSumError", { total: totalWeight }))
-                  return
-                }
-                onSave(name.trim(), description.trim(), fields, nameAr, descriptionAr)
-              }}
-              className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold shadow-xs"
-            >
-              {isSaving ? tAI("savingLabel") : t("save")}
-            </Button>
-          </div>
+            <div className="flex items-center gap-3 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowConfirmTurnOffModal(false)}
+                className="flex-1 h-10 text-xs font-semibold rounded-xl"
+              >
+                {t("cancel")}
+              </Button>
+              <Button
+                type="button"
+                onClick={handleConfirmTurnOffVisitJourney}
+                className="flex-1 h-10 text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white rounded-xl shadow-md"
+              >
+                {tAI("confirmTurnOffBtn")}
+              </Button>
+            </div>
+          </Card>
         </div>
       )}
     </form>

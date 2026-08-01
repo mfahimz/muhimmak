@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin"
 import { notFound } from "next/navigation"
+import { decryptPlate } from "@/lib/utils/plate-number"
 import { SurveyClient } from "./SurveyClient"
 
 interface PageProps {
@@ -11,21 +12,24 @@ export default async function SurveyKioskPage({ params }: PageProps) {
 
   // 1. Fetch session server-side using admin client (Security Fix - no public select policy)
   const admin = createAdminClient()
-  const { data: session, error: sessionError } = await admin
+  const { data: rawSession, error: sessionError } = await admin
     .from("sessions")
-    .select("id, form_id, location_id, status, language, plate_number_encrypted")
+    .select("id, form_id, location_id, status, language, plate_number_encrypted, visit_stage")
     .eq("id", id)
     .single()
 
-  if (sessionError || !session) {
+  if (sessionError || !rawSession) {
     notFound()
   }
+
+  const plateNumber = decryptPlate(rawSession.plate_number_encrypted)
+  const { plate_number_encrypted, ...sanitizedSession } = rawSession
 
   // 2. Fetch the corresponding form layout
   const { data: form, error: formError } = await admin
     .from("forms")
     .select("id, name, description, fields")
-    .eq("id", session.form_id)
+    .eq("id", sanitizedSession.form_id)
     .single()
 
   if (formError || !form) {
@@ -47,7 +51,8 @@ export default async function SurveyKioskPage({ params }: PageProps) {
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col justify-between">
       <SurveyClient
-        session={session}
+        session={sanitizedSession}
+        plateNumber={plateNumber}
         form={form}
         facilitySettings={settings}
       />

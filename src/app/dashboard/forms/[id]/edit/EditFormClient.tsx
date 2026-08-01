@@ -19,6 +19,8 @@ export interface EditFormClientProps {
     fields: any
     status: string
     parent_id: string | null
+    type?: string | null
+    is_visit_journey?: boolean | null
   }
 }
 
@@ -60,7 +62,14 @@ export function EditFormClient({ userId, form }: EditFormClientProps) {
     checkResponses()
   }, [form.id])
 
-  const handleSave = async (name: string, description: string, fields: BuilderField[], nameAr: string, descriptionAr: string) => {
+  const handleSave = async (
+    name: string,
+    description: string,
+    fields: BuilderField[],
+    nameAr: string,
+    descriptionAr: string,
+    isVisitJourney: boolean
+  ) => {
     setIsSaving(true)
     const supabase = createClient()
 
@@ -94,9 +103,11 @@ export function EditFormClient({ userId, form }: EditFormClientProps) {
             fields,
             name_ar: nameAr,
             description_ar: descriptionAr,
+            is_visit_journey: isVisitJourney,
             status: "active", // New active version
             created_by: userId,
             parent_id: form.parent_id || form.id, // Group under the root parent
+            type: form.type || "smart",
           })
 
         if (insertErr) throw insertErr
@@ -112,6 +123,7 @@ export function EditFormClient({ userId, form }: EditFormClientProps) {
             fields,
             name_ar: nameAr,
             description_ar: descriptionAr,
+            is_visit_journey: isVisitJourney,
             updated_at: new Date().toISOString(),
           })
           .eq("id", form.id)
@@ -150,11 +162,13 @@ export function EditFormClient({ userId, form }: EditFormClientProps) {
       )}
 
       <FormBuilder
+        formType={form.type}
         initialName={form.name}
         initialDescription={form.description || ""}
         initialNameAr={form.name_ar || ""}
         initialDescriptionAr={form.description_ar || ""}
         initialFields={initialFields}
+        initialIsVisitJourney={form.is_visit_journey ?? false}
         isSaving={isSaving}
         onSave={handleSave}
         onCancel={handleCancel}

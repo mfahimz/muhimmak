@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { redirect } from "next/navigation"
 import { SiteHeader } from "@/components/site-header"
 import { getLocale, getTranslations } from "next-intl/server"
+import { toArabicNumerals } from "@/lib/utils/arabic-numerals"
 import Link from "next/link"
 import { PlusIcon, FileTextIcon, HelpCircleIcon, CalendarIcon, ArrowRightIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -60,11 +61,12 @@ export default async function FormsPage() {
 
   // Helper to format date
   const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString(locale === "ar" ? "ar-AE" : "en-US", {
+    const formatted = new Date(dateStr).toLocaleDateString(locale === "ar" ? "ar-AE" : "en-US", {
       year: "numeric",
       month: "short",
       day: "numeric",
     })
+    return toArabicNumerals(formatted, locale)
   }
 
   return (
@@ -162,7 +164,7 @@ export default async function FormsPage() {
                         <td className="px-6 py-4 text-center tabular-nums text-slate-600 dark:text-slate-400">
                           <span className="inline-flex items-center gap-1">
                             <HelpCircleIcon className="size-3.5 text-slate-400" />
-                            {questionCount}
+                            {toArabicNumerals(questionCount, locale)}
                           </span>
                         </td>
                         <td className="px-6 py-4 text-center tabular-nums text-slate-600 dark:text-slate-400 whitespace-nowrap">

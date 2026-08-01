@@ -2,6 +2,8 @@ import { redirect, notFound } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { deepseek, DEEPSEEK_MODEL } from '@/server/lib/deepseek';
+import { computeVisitScore } from '@/server/services/sessions.service';
+import { decryptPlate } from '@/lib/utils/plate-number';
 import SessionDetailClient from './SessionDetailClient';
 import { SiteHeader } from '@/components/site-header';
 import { getTranslations } from 'next-intl/server';
@@ -111,6 +113,8 @@ export default async function SessionDetailPage({ params }: PageProps) {
   const fields = Array.isArray(form?.fields) ? form.fields : [];
   const answers = response?.answers || {};
   const showPlate = !HIDE_PLATE_ROLES.includes(role);
+  const plateNumber = decryptPlate(session.plate_number_encrypted);
+  const { plate_number_encrypted, ...sanitizedSession } = session;
 
   // Generate AI summary server-side (only for completed sessions with answers)
   let aiSummary = '';
@@ -122,40 +126,17 @@ export default async function SessionDetailPage({ params }: PageProps) {
     );
   }
 
-  // Compute score
-  let computedScore: number | null = null;
-  if (session.status === 'completed' && fields.length > 0 && Object.keys(answers).length > 0) {
-    const scoreable = fields.filter(
-      f => f.type === 'star_rating' || f.type === 'multiple_choice' || f.type === 'text'
-    );
-    let weightedSum = 0;
-    let totalWeight = 0;
-    scoreable.forEach(f => {
-      const answer = answers[f.id];
-      if (answer === undefined || answer === null) return;
-      let score = 0;
-      if (f.type === 'star_rating') score = (Number(answer) / 5) * 100;
-      else if (f.type === 'multiple_choice') {
-        const idx = Array.isArray(f.options) ? f.options.indexOf(String(answer)) : -1;
-        if (idx !== -1 && Array.isArray(f.optionScores)) score = f.optionScores[idx] ?? 0;
-      } else if (f.type === 'text') {
-        score = response?.ai_text_score ?? answers._textScores?.[f.id] ?? 50;
-      }
-      weightedSum += (score * (f.weight || 0)) / 100;
-      totalWeight += f.weight || 0;
-    });
-    if (totalWeight > 0) computedScore = Math.round((weightedSum * 100) / totalWeight);
-  }
+  // Compute Visit Score details
+  const visitScoreDetails = await computeVisitScore(id);
 
   const threshold = facilitySettings?.review_qr_threshold_percent ?? 90;
-
   const t = await getTranslations('Sessions');
 
   return (
     <>
       <SiteHeader title={t('sessionDetail')} />
       <SessionDetailClient
-        session={session}
+        session={sanitizedSession}
         response={response ?? null}
         form={form ?? null}
         fields={fields}
@@ -163,8 +144,10 @@ export default async function SessionDetailPage({ params }: PageProps) {
         creatorName={creator?.full_name ?? 'Unknown'}
         role={role}
         showPlate={showPlate}
+        plateNumber={plateNumber}
         aiSummary={aiSummary}
-        computedScore={computedScore}
+        computedScore={visitScoreDetails.ownScore}
+        visitScoreDetails={visitScoreDetails}
         threshold={threshold}
       />
     </>

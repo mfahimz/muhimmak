@@ -338,23 +338,18 @@ export function SettingsClient({
                   <div key={item.id} className="py-5 first:pt-0 last:pb-0 space-y-4">
                     {/* Toggle and Meta Header */}
                     <div className="flex items-start justify-between gap-4">
-                      <div className="space-y-1">
-                        <span className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">
-                          ID: {item.id}
-                        </span>
-                        <div className="flex items-center gap-2">
-                          <Input
-                            value={item.name}
-                            onChange={(e) => handleFieldChange(item.id, "name", e.target.value)}
-                            className="h-8 text-sm font-bold border-transparent hover:border-slate-200 focus:border-indigo-500 hover:bg-slate-50/50 p-1 -ml-1 text-slate-900 dark:text-slate-100 max-w-[200px]"
-                            required
-                          />
-                          {!item.is_implemented && (
-                            <Badge className="bg-slate-100 text-slate-500 dark:bg-slate-900 text-[10px] font-semibold hover:bg-slate-100 border-none px-1.5 py-0">
-                              {t("comingSoon")}
-                            </Badge>
-                          )}
-                        </div>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          value={item.name}
+                          onChange={(e) => handleFieldChange(item.id, "name", e.target.value)}
+                          className="h-8 text-sm font-bold border-transparent hover:border-slate-200 focus:border-indigo-500 hover:bg-slate-50/50 p-1 -ml-1 text-slate-900 dark:text-slate-100 max-w-[200px]"
+                          required
+                        />
+                        {!item.is_implemented && (
+                          <Badge className="bg-slate-100 text-slate-500 dark:bg-slate-900 text-[10px] font-semibold hover:bg-slate-100 border-none px-1.5 py-0">
+                            {t("comingSoon")}
+                          </Badge>
+                        )}
                       </div>
 
                       {/* Enabled Toggle Switch */}
@@ -576,12 +571,12 @@ export function SettingsClient({
                   <Label htmlFor="default-form" className="text-sm font-semibold text-slate-700 dark:text-slate-300">
                     {t("defaultFormLabel")}
                   </Label>
-                  <Select value={defaultFormId || ""} onValueChange={(val) => setDefaultFormId(val || null)}>
+                  <Select value={defaultFormId || "none"} onValueChange={(val) => setDefaultFormId(val === "none" ? null : val)}>
                     <SelectTrigger id="default-form" className="h-10 border-slate-200 focus:ring-indigo-500 dark:border-slate-800 text-slate-900 dark:text-slate-100 w-full max-w-[300px]">
                       <SelectValue placeholder={t("defaultFormNone")} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">{t("defaultFormNone")}</SelectItem>
+                      <SelectItem value="none">{t("defaultFormNone")}</SelectItem>
                       {activeForms.map((form) => (
                         <SelectItem key={form.id} value={form.id}>
                           {form.name}
