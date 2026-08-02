@@ -71,7 +71,26 @@ export default async function Page() {
   startOfToday.setUTCHours(0, 0, 0, 0)
   const startOfTodayISO = startOfToday.toISOString()
 
+  let todaysSessionsCount = 0
+  let todaysRefusalsCount = 0
+
   if (isReceptionist) {
+    const { count: sCount } = await admin
+      .from("sessions")
+      .select("id", { count: "exact", head: true })
+      .eq("created_by", user.id)
+      .gte("started_at", startOfTodayISO)
+
+    const { count: rCount } = await admin
+      .from("sessions")
+      .select("id", { count: "exact", head: true })
+      .eq("created_by", user.id)
+      .eq("status", "refused")
+      .gte("refused_at", startOfTodayISO)
+
+    todaysSessionsCount = sCount ?? 0
+    todaysRefusalsCount = rCount ?? 0
+
     // Compute server-side receptionist impact stats
     receptionistImpact = await computeReceptionistImpact(user.id)
   } else {
@@ -143,6 +162,14 @@ export default async function Page() {
     }
   }
 
+  // Query facility-wide pending closures count
+  const { count: pCount } = await admin
+    .from("visit_closures")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "pending")
+
+  const pendingClosuresCount = pCount ?? 0
+
   return (
     <>
       <SiteHeader title={tHeader("dashboardOverview")} />
@@ -173,26 +200,15 @@ export default async function Page() {
           /* =========================================================================
              RECEPTIONIST VIEW (IMPACT DASHBOARD)
              ========================================================================= */
-          <div className="space-y-6">
-            {/* Top Prominent Action Card */}
-            <div className="rounded-2xl border border-indigo-200 bg-linear-to-br from-indigo-50/40 via-card to-card p-6 shadow-xs text-center md:text-start flex flex-col md:flex-row md:items-center md:justify-between gap-6 transition-all duration-300 hover:border-indigo-300 dark:border-indigo-900/40 dark:from-indigo-950/10 animate-fade-in">
-              <div className="space-y-1.5 text-start">
-                <h3 className="text-lg font-bold tracking-tight text-indigo-900 dark:text-indigo-100">{t("startSessionButton")}</h3>
-                <p className="text-sm text-muted-foreground max-w-xl">
-                  {t("startSessionDesc")}
-                </p>
-              </div>
-              <Link href="/dashboard/sessions/new" className="shrink-0">
-                <button className="flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-md transition-all duration-200 hover:bg-indigo-500 active:scale-98 cursor-pointer">
-                  <PlusIcon className="size-4" />
-                  <span>{t("startSessionButton")}</span>
-                </button>
-              </Link>
-            </div>
-
-            {/* Receptionist Impact Card View */}
+          <div className="space-y-4">
             {receptionistImpact && (
-              <ReceptionistImpactCard data={receptionistImpact} staffName={fullName} />
+              <ReceptionistImpactCard
+                data={receptionistImpact}
+                staffName={fullName}
+                todaysSessions={todaysSessionsCount}
+                todaysRefusals={todaysRefusalsCount}
+                pendingClosuresCount={pendingClosuresCount}
+              />
             )}
           </div>
         ) : (
@@ -200,7 +216,7 @@ export default async function Page() {
              FULL VIEW (ADMIN, CEO, AGM, MANAGER)
              ========================================================================= */
           <div className="space-y-6">
-            {canStartSession && (
+            {/* {canStartSession && (
               <div className="rounded-2xl border border-indigo-200 bg-linear-to-br from-indigo-50/40 via-card to-card p-6 shadow-xs text-center md:text-start flex flex-col md:flex-row md:items-center md:justify-between gap-6 transition-all duration-300 hover:border-indigo-300 dark:border-indigo-900/40 dark:from-indigo-950/10 animate-fade-in">
                 <div className="space-y-1.5 text-start">
                   <h3 className="text-lg font-bold tracking-tight text-indigo-900 dark:text-indigo-100">{t("startSessionButton")}</h3>
@@ -215,7 +231,7 @@ export default async function Page() {
                   </button>
                 </Link>
               </div>
-            )}
+            )} */}
 
             {/* Dropdown Selector for super_admin and ceo */}
             {isSuperAdminOrCeo && (

@@ -1,127 +1,191 @@
 "use client";
 
 import React from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useTranslations, useLocale } from "next-intl";
+import { toast } from "sonner";
 import { toArabicNumerals } from "@/lib/utils/arabic-numerals";
 import {
-  AwardIcon,
-  CheckCircle2Icon,
   FlameIcon,
   MessageSquareHeartIcon,
   SparklesIcon,
   StarIcon,
   TargetIcon,
   TrendingUpIcon,
-  ActivityIcon,
+  UserXIcon,
+  Loader2Icon,
+  PlusIcon,
+  ChevronDownIcon,
+  ChevronUpIcon,
+  CalendarCheckIcon,
+  BanIcon,
+  ClockAlert,
+  ChevronRightIcon,
 } from "lucide-react";
 import { ReceptionistImpactData } from "@/server/services/sessions.service";
 
 interface ReceptionistImpactCardProps {
   data: ReceptionistImpactData;
   staffName: string;
+  todaysSessions?: number;
+  todaysRefusals?: number;
+  pendingClosuresCount?: number;
 }
 
 export default function ReceptionistImpactCard({
   data,
   staffName,
+  todaysSessions = 0,
+  todaysRefusals = 0,
+  pendingClosuresCount = 0,
 }: ReceptionistImpactCardProps) {
   const t = useTranslations("Impact");
+  const tDash = useTranslations("Dashboard");
+  const tCommon = useTranslations("Sessions");
   const locale = useLocale();
+  const router = useRouter();
+
+  const [showRefusalConfirm, setShowRefusalConfirm] = React.useState(false);
+  const [isLoggingRefusal, setIsLoggingRefusal] = React.useState(false);
+  const [isQuotesExpanded, setIsQuotesExpanded] = React.useState(false);
+
+  const handleLogRefusal = async () => {
+    setIsLoggingRefusal(true);
+    try {
+      const res = await fetch("/api/v1/sessions/log-refusal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+
+      const resData = await res.json();
+      if (!res.ok) {
+        throw new Error(resData.error || t("logRefusalError"));
+      }
+
+      toast.success(t("logRefusalSuccess"));
+      setShowRefusalConfirm(false);
+      router.refresh();
+    } catch (err: any) {
+      console.error("Error logging refusal:", err);
+      toast.error(t("logRefusalError"));
+    } finally {
+      setIsLoggingRefusal(false);
+    }
+  };
 
   const {
-    totalSessions,
     milestones,
     stats90Days,
     recognitionFeed,
     weeklyRecap,
   } = data;
 
-  const formattedAvgScore =
-    stats90Days.avgScore !== null ? `${stats90Days.avgScore}%` : "—";
   const formattedWeeklyAvgScore =
     weeklyRecap.avgScore !== null ? `${weeklyRecap.avgScore}%` : "—";
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      {/* Welcome & Impact Banner */}
-      <div className="relative overflow-hidden rounded-2xl border border-indigo-100 dark:border-indigo-900/40 bg-linear-to-br from-indigo-50/60 via-card to-card p-6 shadow-xs">
-        <div className="absolute top-0 end-0 -me-16 -mt-16 size-48 rounded-full bg-indigo-500/10 blur-3xl" />
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-100 dark:bg-indigo-950/60 px-3 py-1 text-xs font-bold text-indigo-700 dark:text-indigo-300">
-                <SparklesIcon className="size-3.5 text-indigo-500 animate-pulse" />
-                {t("impactBadge")}
-              </span>
+    <div className="space-y-4 animate-fade-in">
+      {/* A) TOP STATS BAR — Single row with Today's Sessions, Today's Refusals, & Prominent Log Refusal button */}
+      <div className="relative overflow-hidden rounded-2xl border border-indigo-100 dark:border-indigo-900/40 bg-linear-to-br from-indigo-50/60 via-card to-card p-4 shadow-xs">
+        {/* Decorative blur blob — Bug Fix: pointer-events-none added */}
+        <div className="absolute top-0 end-0 -me-16 -mt-16 size-48 rounded-full bg-indigo-500/10 blur-3xl pointer-events-none" />
+        <div className="relative z-10 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-4 sm:gap-6">
+            {/* Today's Sessions */}
+            <div className="flex items-center gap-2.5">
+              <div className="flex size-9 items-center justify-center rounded-lg bg-indigo-100 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400">
+                <CalendarCheckIcon className="size-4.5" />
+              </div>
+              <div className="text-start">
+                <p className="text-xs font-semibold text-muted-foreground">
+                  {t("todaysSessions")}
+                </p>
+                <p className="text-xl font-bold tracking-tight text-foreground tabular-nums">
+                  {toArabicNumerals(todaysSessions, locale)}
+                </p>
+              </div>
             </div>
-            <h2 className="text-2xl font-extrabold tracking-tight text-foreground">
-              {t("impactOverviewTitle", { name: staffName })}
-            </h2>
-            <p className="text-sm text-muted-foreground max-w-xl">
-              {t("impactOverviewSubtitle")}
-            </p>
+
+            <div className="h-8 w-px bg-border/60" />
+
+            {/* Today's Refusals */}
+            <div className="flex items-center gap-2.5">
+              <div className="flex size-9 items-center justify-center rounded-lg bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400">
+                <BanIcon className="size-4.5" />
+              </div>
+              <div className="text-start">
+                <p className="text-xs font-semibold text-muted-foreground">
+                  {t("todaysRefusals")}
+                </p>
+                <p className="text-xl font-bold tracking-tight text-foreground tabular-nums">
+                  {toArabicNumerals(todaysRefusals, locale)}
+                </p>
+              </div>
+            </div>
           </div>
+
+          {/* Log Refusal Button — Prominent CTA */}
+          <button
+            type="button"
+            onClick={() => setShowRefusalConfirm(true)}
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-rose-200 dark:border-rose-900/60 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/50 dark:hover:bg-rose-900/60 px-4 py-2.5 text-xs sm:text-sm font-bold text-rose-700 dark:text-rose-300 shadow-xs transition-all cursor-pointer active:scale-[0.98]"
+          >
+            <UserXIcon className="size-4 text-rose-600 dark:text-rose-400" />
+            <span>{t("logRefusalButton")}</span>
+          </button>
         </div>
       </div>
 
-      {/* 1. Personal Stats Grid */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        {/* Total Sessions */}
-        <div className="group relative rounded-xl border border-border bg-card p-5 shadow-xs transition-all duration-300 hover:-translate-y-0.5 hover:border-indigo-300 dark:hover:border-indigo-800">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-semibold tracking-wide text-muted-foreground">
-              {t("stats.totalSessionsLabel")}
-            </span>
-            <div className="flex size-10 items-center justify-center rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 group-hover:bg-indigo-600 group-hover:text-white transition-colors duration-300">
-              <ActivityIcon className="size-5" />
+      {/* B) PENDING CLOSURES PREVIEW CARD */}
+      <div className="relative overflow-hidden rounded-2xl border border-amber-200 dark:border-amber-900/50 bg-linear-to-br from-amber-50/70 via-card to-card p-4 shadow-xs transition-all hover:border-amber-300 dark:from-amber-950/20">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <div className="flex size-10 items-center justify-center rounded-xl bg-amber-100 dark:bg-amber-950/70 text-amber-600 dark:text-amber-400 shrink-0">
+              <ClockAlert className="size-5" />
+            </div>
+            <div className="text-start space-y-0.5">
+              <h4 className="text-sm font-bold text-foreground">
+                {t("pendingClosuresPreview", { count: toArabicNumerals(pendingClosuresCount, locale) })}
+              </h4>
             </div>
           </div>
-          <div className="mt-4 text-start">
-            <h3 className="text-3xl font-bold tracking-tight tabular-nums text-foreground">
-              {toArabicNumerals(totalSessions, locale)}
-            </h3>
-            <p className="text-xs text-muted-foreground mt-1">
-              {t("stats.totalSessionsSub")}
-            </p>
-          </div>
-        </div>
-
-        {/* 90-Day Avg Score */}
-        <div className="group relative rounded-xl border border-border bg-card p-5 shadow-xs transition-all duration-300 hover:-translate-y-0.5 hover:border-emerald-300 dark:hover:border-emerald-800">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-semibold tracking-wide text-muted-foreground">
-              {t("stats.avgScoreLabel")}
-            </span>
-            <div className="flex size-10 items-center justify-center rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 group-hover:bg-emerald-600 group-hover:text-white transition-colors duration-300">
-              <StarIcon className="size-5" />
-            </div>
-          </div>
-          <div className="mt-4 text-start">
-            <h3 className="text-3xl font-bold tracking-tight tabular-nums text-foreground">
-              {toArabicNumerals(formattedAvgScore, locale)}
-            </h3>
-            <p className="text-xs text-muted-foreground mt-1">
-              {t("stats.avgScoreSub", { count: toArabicNumerals(stats90Days.totalCompleted, locale) })}
-            </p>
-          </div>
+          <Link
+            href="/dashboard/pending-closures"
+            className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 active:scale-[0.98] px-4 py-2 text-xs font-bold text-white shadow-xs transition-all cursor-pointer shrink-0"
+          >
+            <span>{t("viewPendingClosures")}</span>
+            <ChevronRightIcon className="size-4" />
+          </Link>
         </div>
       </div>
 
-      {/* 2. Streak & Milestone Progress */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {/* C) PRIMARY CTA — Full-width prominent Start Session button */}
+      {/* <Link href="/dashboard/sessions/new" className="block w-full">
+        <button
+          type="button"
+          className="w-full flex items-center justify-center gap-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:scale-[0.99] py-3.5 px-6 text-base font-bold text-white shadow-md hover:shadow-indigo-500/20 transition-all cursor-pointer"
+        >
+          <PlusIcon className="size-5" />
+          <span>{tDash("startSessionButton")}</span>
+        </button>
+      </Link> */}
+
+      {/* D) STREAK + MILESTONE — Two cards side-by-side */}
+      {/* <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Active Streak Card */}
-        <div className="rounded-xl border border-border bg-card p-6 shadow-xs flex flex-col justify-between space-y-4">
+        {/* <div className="rounded-xl border border-border bg-card p-5 shadow-xs flex flex-col justify-between space-y-3">
           <div className="flex items-start justify-between">
-            <div className="space-y-1">
+            <div className="space-y-0.5">
               <div className="flex items-center gap-2">
                 <FlameIcon
-                  className={`size-5 ${
+                  className={`size-4.5 ${
                     stats90Days.streak > 0
                       ? "text-amber-500 animate-bounce"
                       : "text-muted-foreground"
                   }`}
                 />
-                <h4 className="text-base font-bold text-foreground">
+                <h4 className="text-sm font-bold text-foreground">
                   {t("streak.title")}
                 </h4>
               </div>
@@ -130,16 +194,16 @@ export default function ReceptionistImpactCard({
               </p>
             </div>
             {stats90Days.streak > 0 && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 dark:bg-amber-950/60 px-2.5 py-1 text-xs font-bold text-amber-700 dark:text-amber-300">
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 dark:bg-amber-950/60 px-2 py-0.5 text-xs font-bold text-amber-700 dark:text-amber-300">
                 🔥 {t("streak.badge", { count: toArabicNumerals(stats90Days.streak, locale) })}
               </span>
             )}
           </div>
 
-          <div className="rounded-lg bg-muted/40 p-4 text-start">
+          <div className="rounded-lg bg-muted/40 p-3 text-start">
             {stats90Days.streak > 0 ? (
-              <div className="space-y-1">
-                <p className="text-2xl font-black text-amber-600 dark:text-amber-400 tabular-nums">
+              <div className="space-y-0.5">
+                <p className="text-xl font-black text-amber-600 dark:text-amber-400 tabular-nums">
                   {t("streak.activeCount", { count: toArabicNumerals(stats90Days.streak, locale) })}
                 </p>
                 <p className="text-xs font-medium text-muted-foreground">
@@ -147,20 +211,20 @@ export default function ReceptionistImpactCard({
                 </p>
               </div>
             ) : (
-              <p className="text-sm font-medium text-muted-foreground">
+              <p className="text-xs font-medium text-muted-foreground">
                 {t("streak.zeroMessage")}
               </p>
             )}
           </div>
-        </div>
+        </div> */}
 
         {/* Milestone Progress Card */}
-        <div className="rounded-xl border border-border bg-card p-6 shadow-xs flex flex-col justify-between space-y-4">
+        {/* <div className="rounded-xl border border-border bg-card p-5 shadow-xs flex flex-col justify-between space-y-3">
           <div className="flex items-start justify-between">
-            <div className="space-y-1">
+            <div className="space-y-0.5">
               <div className="flex items-center gap-2">
-                <TargetIcon className="size-5 text-indigo-500" />
-                <h4 className="text-base font-bold text-foreground">
+                <TargetIcon className="size-4.5 text-indigo-500" />
+                <h4 className="text-sm font-bold text-foreground">
                   {t("milestone.title")}
                 </h4>
               </div>
@@ -173,8 +237,8 @@ export default function ReceptionistImpactCard({
             </span>
           </div>
 
-          <div className="space-y-2">
-            <div className="h-3.5 w-full overflow-hidden rounded-full bg-muted">
+          <div className="space-y-1.5">
+            <div className="h-3 w-full overflow-hidden rounded-full bg-muted">
               <div
                 className="h-full rounded-full bg-linear-to-r from-indigo-500 to-purple-600 transition-all duration-500"
                 style={{ width: `${milestones.percentage}%` }}
@@ -185,125 +249,141 @@ export default function ReceptionistImpactCard({
               <span className="font-semibold">{toArabicNumerals(milestones.percentage, locale)}%</span>
             </div>
           </div>
-        </div>
-      </div>
+        </div> */}
+      {/* </div> */}
 
-      {/* 3. Recognition Feed */}
-      <div className="rounded-xl border border-border bg-card p-6 shadow-xs space-y-5">
-        <div className="flex items-center justify-between border-b border-border/50 pb-4">
+      {/* D) RECOGNITION FEED — Collapsible */}
+      <div className="rounded-xl border border-border bg-card shadow-xs overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setIsQuotesExpanded(!isQuotesExpanded)}
+          className="w-full flex items-center justify-between p-4 bg-card hover:bg-muted/30 transition-colors cursor-pointer text-start"
+        >
           <div className="flex items-center gap-2.5">
-            <div className="flex size-9 items-center justify-center rounded-lg bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400">
-              <MessageSquareHeartIcon className="size-5" />
+            <div className="flex size-8 items-center justify-center rounded-lg bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400">
+              <MessageSquareHeartIcon className="size-4" />
             </div>
-            <div className="text-start">
-              <h3 className="text-base font-bold text-foreground">
+            <div>
+              <h3 className="text-sm font-bold text-foreground">
                 {t("recognition.title")}
               </h3>
               <p className="text-xs text-muted-foreground">
-                {t("recognition.subtitle")}
+                {toArabicNumerals(recognitionFeed.length, locale)}{" "}
+                {recognitionFeed.length === 1
+                  ? t("recognition.quoteSingle")
+                  : t("recognition.quotePlural")}
               </p>
             </div>
           </div>
-          <span className="text-xs font-semibold text-muted-foreground bg-muted px-2.5 py-1 rounded-full">
-            {toArabicNumerals(recognitionFeed.length, locale)}{" "}
-            {recognitionFeed.length === 1
-              ? t("recognition.quoteSingle")
-              : t("recognition.quotePlural")}
-          </span>
-        </div>
+          <div className="flex items-center gap-2 text-muted-foreground">
+            {isQuotesExpanded ? (
+              <ChevronUpIcon className="size-4" />
+            ) : (
+              <ChevronDownIcon className="size-4" />
+            )}
+          </div>
+        </button>
 
-        {recognitionFeed.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {recognitionFeed.map((item, idx) => (
-              <div
-                key={idx}
-                className="relative rounded-xl border border-border/80 bg-muted/20 p-4 transition-all duration-200 hover:bg-muted/30 text-start space-y-3 flex flex-col justify-between"
-              >
-                <p className="text-sm font-medium text-foreground italic leading-relaxed">
-                  &ldquo;{item.comment}&rdquo;
-                </p>
-                <div className="flex items-center justify-between pt-2 border-t border-border/40 text-xs">
-                  <span className="text-muted-foreground">
-                    {toArabicNumerals(new Date(item.date).toLocaleDateString(locale === "ar" ? "ar-AE" : "en-US", {
-                      month: "short",
-                      day: "numeric",
-                      year: "numeric",
-                    }), locale)}
-                  </span>
-                  <span className="inline-flex items-center gap-1 rounded-md bg-emerald-100 dark:bg-emerald-950/70 px-2 py-0.5 font-bold text-emerald-700 dark:text-emerald-300">
-                    <StarIcon className="size-3 fill-emerald-600 text-emerald-600" />
-                    {toArabicNumerals(item.score, locale)}%
-                  </span>
-                </div>
+        {isQuotesExpanded && (
+          <div className="p-4 border-t border-border/50 bg-muted/10 space-y-3 animate-fade-in">
+            {recognitionFeed.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {recognitionFeed.slice(0, 3).map((item, idx) => (
+                  <div
+                    key={idx}
+                    className="relative rounded-xl border border-border/80 bg-card p-3.5 text-start space-y-2 flex flex-col justify-between"
+                  >
+                    <p className="text-xs font-medium text-foreground italic leading-relaxed line-clamp-3">
+                      &ldquo;{item.comment}&rdquo;
+                    </p>
+                    <div className="flex items-center justify-between pt-2 border-t border-border/40 text-xs">
+                      <span className="text-muted-foreground">
+                        {toArabicNumerals(
+                          new Date(item.date).toLocaleDateString(
+                            locale === "ar" ? "ar-AE" : "en-US",
+                            { month: "short", day: "numeric" }
+                          ),
+                          locale
+                        )}
+                      </span>
+                      <span className="inline-flex items-center gap-1 rounded-md bg-emerald-100 dark:bg-emerald-950/70 px-1.5 py-0.5 font-bold text-emerald-700 dark:text-emerald-300">
+                        <StarIcon className="size-3 fill-emerald-600 text-emerald-600" />
+                        {toArabicNumerals(item.score, locale)}%
+                      </span>
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        ) : (
-          <div className="rounded-xl border border-dashed border-border/70 p-8 text-center space-y-2">
-            <SparklesIcon className="size-8 text-amber-400 mx-auto animate-pulse" />
-            <h4 className="text-sm font-semibold text-foreground">
-              {t("recognition.emptyTitle")}
-            </h4>
-            <p className="text-xs text-muted-foreground max-w-md mx-auto">
-              {t("recognition.emptySubtitle")}
-            </p>
+            ) : (
+              <div className="rounded-xl border border-dashed border-border/70 p-6 text-center space-y-1">
+                <SparklesIcon className="size-6 text-amber-400 mx-auto animate-pulse" />
+                <h4 className="text-xs font-semibold text-foreground">
+                  {t("recognition.emptyTitle")}
+                </h4>
+                <p className="text-xs text-muted-foreground">
+                  {t("recognition.emptySubtitle")}
+                </p>
+              </div>
+            )}
           </div>
         )}
       </div>
 
-      {/* 4. Weekly Recap */}
-      <div className="rounded-xl border border-border bg-card p-6 shadow-xs space-y-4 text-start">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <TrendingUpIcon className="size-5 text-indigo-600 dark:text-indigo-400" />
-            <h3 className="text-base font-bold text-foreground">
-              {t("weekly.title")}
-            </h3>
-          </div>
-          <span className="text-xs text-muted-foreground">
-            {t("weekly.rangeLabel")}
+      {/* E) WEEKLY RECAP — Two numbers only in a single compact row */}
+      <div className="rounded-xl border border-border bg-card p-4 shadow-xs flex items-center justify-between text-xs">
+        <div className="flex items-center gap-2">
+          <TrendingUpIcon className="size-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+          <span className="font-semibold text-foreground">
+            {t("thisWeekRecap", {
+              sessions: toArabicNumerals(weeklyRecap.count, locale),
+              avg: toArabicNumerals(formattedWeeklyAvgScore, locale),
+            })}
           </span>
         </div>
+        <span className="text-muted-foreground font-medium">
+          {t("weekly.rangeLabel")}
+        </span>
+      </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="rounded-lg border border-border/60 bg-muted/20 p-4 flex items-center justify-between">
-            <div>
-              <p className="text-xs font-semibold text-muted-foreground">
-                {t("weekly.sessionsCountLabel")}
-              </p>
-              <p className="text-2xl font-bold text-foreground tabular-nums mt-1">
-                {toArabicNumerals(weeklyRecap.count, locale)}
-              </p>
+      {/* Refusal Confirmation Dialog Modal */}
+      {showRefusalConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs animate-fade-in">
+          <div className="bg-card border border-border rounded-2xl shadow-xl w-full max-w-md p-6 space-y-4 text-start">
+            <div className="flex items-center gap-3 text-rose-600 dark:text-rose-400">
+              <UserXIcon className="size-5 shrink-0" />
+              <h3 className="text-base font-bold text-foreground">
+                {t("logRefusalConfirmTitle")}
+              </h3>
             </div>
-            <CheckCircle2Icon className="size-6 text-indigo-500/40" />
-          </div>
 
-          <div className="rounded-lg border border-border/60 bg-muted/20 p-4 flex items-center justify-between">
-            <div>
-              <p className="text-xs font-semibold text-muted-foreground">
-                {t("weekly.avgScoreLabel")}
-              </p>
-              <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 tabular-nums mt-1">
-                {toArabicNumerals(formattedWeeklyAvgScore, locale)}
-              </p>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              {t("logRefusalConfirmDesc")}
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-border/60">
+              <button
+                type="button"
+                onClick={() => setShowRefusalConfirm(false)}
+                disabled={isLoggingRefusal}
+                className="rounded-xl border border-border bg-background px-4 py-2 text-xs font-semibold text-foreground hover:bg-muted transition-colors cursor-pointer"
+              >
+                {tCommon("cancelButton")}
+              </button>
+              <button
+                type="button"
+                onClick={handleLogRefusal}
+                disabled={isLoggingRefusal}
+                className="rounded-xl bg-rose-600 hover:bg-rose-500 text-white px-4 py-2 text-xs font-semibold shadow-xs transition-colors cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+              >
+                {isLoggingRefusal ? (
+                  <Loader2Icon className="size-3.5 animate-spin" />
+                ) : null}
+                <span>{t("logRefusalConfirmTitle")}</span>
+              </button>
             </div>
-            <AwardIcon className="size-6 text-emerald-500/40" />
           </div>
         </div>
-
-        {/* Weekly Highlight */}
-        {weeklyRecap.highlight && (
-          <div className="rounded-xl border border-indigo-100 dark:border-indigo-950/60 bg-linear-to-r from-indigo-50/40 to-purple-50/40 dark:from-indigo-950/20 dark:to-purple-950/20 p-4 space-y-1">
-            <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-700 dark:text-indigo-300">
-              <SparklesIcon className="size-4 text-indigo-500" />
-              <span>{t("weekly.highlightTitle")}</span>
-            </div>
-            <p className="text-sm font-semibold text-indigo-950 dark:text-indigo-100 italic">
-              {weeklyRecap.highlight}
-            </p>
-          </div>
-        )}
-      </div>
+      )}
     </div>
   );
 }

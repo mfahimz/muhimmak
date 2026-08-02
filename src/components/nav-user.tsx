@@ -91,9 +91,9 @@ export function NavUser({
                   {formatRole(user.role)}
                 </span>
               </div>
-              <span className="truncate text-xs text-slate-500 font-normal">
+              {/* <span className="truncate text-xs text-slate-500 font-normal">
                 {user.email}
-              </span>
+              </span> */}
             </div>
             <EllipsisVerticalIcon className="ms-auto size-4 text-slate-400 group-hover/menu-button:text-slate-600 transition-colors" />
           </DropdownMenuTrigger>
@@ -117,9 +117,9 @@ export function NavUser({
                         {formatRole(user.role)}
                       </span>
                     </div>
-                    <span className="truncate text-xs text-muted-foreground">
+                    {/* <span className="truncate text-xs text-muted-foreground">
                       {user.email}
-                    </span>
+                    </span> */}
                   </div>
                 </div>
               </DropdownMenuLabel>

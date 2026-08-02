@@ -420,7 +420,17 @@
     "selectorSubtitle": "Select a receptionist to inspect their personal impact dashboard and customer feedback feed",
     "selectorError": "Could not load impact data for the selected receptionist.",
     "noReceptionistsFound": "No active receptionists found.",
-    "loadingImpactData": "Loading receptionist impact data..."
+    "loadingImpactData": "Loading receptionist impact data...",
+    "logRefusalButton": "Log Refusal",
+    "logRefusalConfirmTitle": "Log Refusal",
+    "logRefusalConfirmDesc": "Did the customer decline to give feedback?",
+    "logRefusalSuccess": "Refusal logged",
+    "logRefusalError": "Failed to log refusal",
+    "todaysSessions": "Today's Sessions",
+    "todaysRefusals": "Today's Refusals",
+    "thisWeekRecap": "This Week: {sessions} sessions, {avg} avg",
+    "pendingClosuresPreview": "{count} vehicles awaiting closure",
+    "viewPendingClosures": "View"
   },
   "Users": {
     "title": "Staff Management",

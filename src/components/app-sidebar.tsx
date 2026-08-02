@@ -92,8 +92,8 @@ export function AppSidebar({ user, ...props }: AppSidebarProps) {
     return ALL_NAV_ITEMS.filter((item) => item.roles.includes(user.role))
   }, [user.role])
 
-  const canStartSession =
-    user.role === "receptionist" || user.role === "super_admin" || user.role === "ceo"
+  // const canStartSession =
+  //   user.role === "receptionist" || user.role === "super_admin" || user.role === "ceo"
 
   return (
     <Sidebar collapsible="offcanvas" {...props}>
@@ -129,7 +129,7 @@ export function AppSidebar({ user, ...props }: AppSidebarProps) {
       </SidebarHeader>
 
       <SidebarContent>
-        {canStartSession && (
+        {/* {canStartSession && (
           <SidebarGroup className="pb-0 pt-4 px-3">
             <SidebarGroupContent>
               <Link href="/dashboard/sessions/new" className="w-full">
@@ -140,7 +140,7 @@ export function AppSidebar({ user, ...props }: AppSidebarProps) {
               </Link>
             </SidebarGroupContent>
           </SidebarGroup>
-        )}
+        )} */}
 
         <SidebarGroup className="pt-[20px]">
           <SidebarGroupContent>

@@ -232,6 +232,51 @@ export async function createSession(request: Request): Promise<NextResponse> {
 }
 
 // ---------------------------------------------------------------------------
+// logRefusal — Log a refusal session directly by receptionist/staff
+// ---------------------------------------------------------------------------
+export async function logRefusal(userId: string, ipAddress?: string | null): Promise<{ success: boolean; sessionId: string }> {
+  const admin = createAdminClient();
+
+  const { data: settings, error: settingsErr } = await admin
+    .from('facility_settings')
+    .select('default_form_id')
+    .eq('id', '00000000-0000-0000-0000-000000000000')
+    .single();
+
+  if (settingsErr || !settings?.default_form_id) {
+    throw new Error('Public feedback is not configured. Default form is not set.');
+  }
+
+  const now = new Date().toISOString();
+
+  const { data: session, error: insertError } = await admin
+    .from('sessions')
+    .insert({
+      created_by: userId,
+      form_id: settings.default_form_id,
+      channel: 'public_qr',
+      language: 'en',
+      status: 'refused',
+      consent_given: false,
+      started_at: now,
+      refused_at: now,
+    })
+    .select('id')
+    .single();
+
+  if (insertError) throw insertError;
+
+  await writeAuditLog({
+    actorId: userId,
+    action: 'session_consent_refused',
+    ipAddress: ipAddress || null,
+    metadata: { sessionId: session.id, channel: 'public_qr' },
+  });
+
+  return { success: true, sessionId: session.id };
+}
+
+// ---------------------------------------------------------------------------
 // createPublicSession (Public QR Flow)
 // ---------------------------------------------------------------------------
 export async function createPublicSession(request: Request): Promise<NextResponse> {
