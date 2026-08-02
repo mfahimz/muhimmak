@@ -36,6 +36,7 @@ export interface UserProfile {
   role: string;
   is_active: boolean;
   created_at: string;
+  notification_email?: string | null;
 }
 
 interface UsersClientProps {
@@ -71,9 +72,11 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
   // Form states
   const [createName, setCreateName] = React.useState("");
   const [createRole, setCreateRole] = React.useState<string>("receptionist");
+  const [createNotificationEmail, setCreateNotificationEmail] = React.useState("");
 
   const [editName, setEditName] = React.useState("");
   const [editRole, setEditRole] = React.useState<string>("receptionist");
+  const [editNotificationEmail, setEditNotificationEmail] = React.useState("");
 
   const [customPin, setCustomPin] = React.useState("");
 
@@ -127,7 +130,11 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
       const res = await fetch("/api/v1/users", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fullName: createName.trim(), role: createRole }),
+        body: JSON.stringify({
+          fullName: createName.trim(),
+          role: createRole,
+          notificationEmail: createNotificationEmail.trim() || null,
+        }),
       });
 
       const data = await res.json();
@@ -139,6 +146,7 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
       setIsCreateOpen(false);
       setCreateName("");
       setCreateRole("receptionist");
+      setCreateNotificationEmail("");
 
       toast.success(t("userCreatedSuccess"));
 
@@ -163,6 +171,7 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
     setEditingUser(user);
     setEditName(user.full_name);
     setEditRole(user.role);
+    setEditNotificationEmail(user.notification_email || "");
   };
 
   const handleEditSubmit = async (e: React.FormEvent) => {
@@ -178,7 +187,11 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
       const res = await fetch(`/api/v1/users/${editingUser.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fullName: editName.trim(), role: editRole }),
+        body: JSON.stringify({
+          fullName: editName.trim(),
+          role: editRole,
+          notificationEmail: editNotificationEmail.trim() || null,
+        }),
       });
 
       const data = await res.json();
@@ -531,6 +544,20 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
                 </Select>
               </div>
 
+              <div className="space-y-1.5">
+                <Label htmlFor="create-notification-email" className="text-xs font-bold text-foreground">
+                  {t("notificationEmail")}
+                </Label>
+                <Input
+                  id="create-notification-email"
+                  type="email"
+                  value={createNotificationEmail}
+                  onChange={(e) => setCreateNotificationEmail(e.target.value)}
+                  placeholder="e.g. staff@example.com"
+                  className="h-10 text-sm border-slate-200 focus-visible:ring-indigo-500"
+                />
+              </div>
+
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-border">
                 <Button
                   type="button"
@@ -619,6 +646,20 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
                     {t("cannotDemoteSelf")}
                   </p>
                 )}
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-notification-email" className="text-xs font-bold text-foreground">
+                  {t("notificationEmail")}
+                </Label>
+                <Input
+                  id="edit-notification-email"
+                  type="email"
+                  value={editNotificationEmail}
+                  onChange={(e) => setEditNotificationEmail(e.target.value)}
+                  placeholder="e.g. staff@example.com"
+                  className="h-10 text-sm border-slate-200 focus-visible:ring-indigo-500"
+                />
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-border">

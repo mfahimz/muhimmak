@@ -10,10 +10,29 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { LayoutGrid, ShieldCheck, Building2, BellRing, Info, Check, AlertTriangle, Loader2, Eye } from "lucide-react"
+import { LayoutGrid, ShieldCheck, Building2, BellRing, Info, Check, AlertTriangle, Loader2, Eye, Calendar, Plus, Trash2 } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import type { NotificationSetting, NotificationEvent } from "@/server/services/notifications.service"
+
+export interface FacilityHoliday {
+  id: string
+  label: string
+  holiday_date: string | null
+  is_recurring_weekly: boolean
+  recurring_weekday: number | null
+  created_at: string
+}
+
+const WEEKDAYS = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+] as const
 
 const RESOURCES = [
   { id: 'dashboard', label: 'Dashboard' },
@@ -112,6 +131,36 @@ export function SettingsClient({
   const [defaultFormId, setDefaultFormId] = React.useState<string | null>(initialFacilitySettings.default_form_id || null)
   const [isSaving, setIsSaving] = React.useState(false)
   const [activeTab, setActiveTab] = React.useState("form-types")
+
+  // Holidays tab states
+  const [holidays, setHolidays] = React.useState<FacilityHoliday[]>([])
+  const [qrRotationEnabled, setQrRotationEnabled] = React.useState(true)
+  const [loadingHolidays, setLoadingHolidays] = React.useState(false)
+  const [newHolidayLabel, setNewHolidayLabel] = React.useState("")
+  const [newHolidayDate, setNewHolidayDate] = React.useState("")
+  const [addingHoliday, setAddingHoliday] = React.useState(false)
+
+  const fetchHolidaysData = React.useCallback(async () => {
+    setLoadingHolidays(true)
+    try {
+      const res = await fetch("/api/v1/facility-holidays")
+      if (res.ok) {
+        const data = await res.json()
+        setHolidays(data.holidays || [])
+        setQrRotationEnabled(data.qr_rotation_enabled ?? true)
+      }
+    } catch (err) {
+      console.error("Failed to fetch holidays data:", err)
+    } finally {
+      setLoadingHolidays(false)
+    }
+  }, [])
+
+  React.useEffect(() => {
+    if (activeTab === "holidays") {
+      fetchHolidaysData()
+    }
+  }, [activeTab, fetchHolidaysData])
 
   const [notifSettings, setNotifSettings] = React.useState<NotificationSetting[]>(
     initialNotificationSettings || []
@@ -316,6 +365,18 @@ export function SettingsClient({
         >
           <BellRing className="size-4" />
           <span>{t("notifications")}</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab("holidays")}
+          className={`flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-semibold transition-all ${
+            activeTab === "holidays"
+              ? "bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-400"
+              : "text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-900/50"
+          }`}
+        >
+          <Calendar className="size-4" />
+          <span>{t("holidaysTab")}</span>
         </button>
       </div>
 
@@ -786,6 +847,264 @@ export function SettingsClient({
                       </Card>
                     )
                   }
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {activeTab === "holidays" && (
+          <Card className="border border-slate-200 dark:border-slate-800 shadow-xs">
+            <CardHeader className="p-6 pb-4">
+              <CardTitle className="text-lg font-bold text-slate-900 dark:text-slate-100">
+                {t("holidaysTitle")}
+              </CardTitle>
+              <CardDescription className="text-xs text-muted-foreground">
+                {t("holidaysSubtitle")}
+              </CardDescription>
+            </CardHeader>
+
+            <CardContent className="p-6 pt-0 space-y-8">
+              {/* Rotation Enabled Toggle */}
+              <div className="p-5 border border-slate-200 dark:border-slate-800 rounded-2xl bg-slate-50/50 dark:bg-slate-900/20 flex items-center justify-between gap-4">
+                <div className="space-y-0.5">
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                    {t("rotationToggleTitle")}
+                  </h4>
+                  <p className="text-xs text-muted-foreground">
+                    {t("rotationToggleDesc")}
+                  </p>
+                </div>
+                <Switch
+                  checked={qrRotationEnabled}
+                  onCheckedChange={async (checked) => {
+                    setQrRotationEnabled(checked)
+                    try {
+                      const res = await fetch("/api/v1/facility-holidays?action=toggle-rotation", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ qrRotationEnabled: checked }),
+                      })
+                      if (!res.ok) throw new Error()
+                      toast.success(t("rotationToggleSuccess"))
+                    } catch {
+                      setQrRotationEnabled(!checked)
+                      toast.error(t("rotationToggleError"))
+                    }
+                  }}
+                />
+              </div>
+
+              {/* Recurring Weekly Days Off */}
+              <div className="space-y-4">
+                <div>
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                    {t("recurringWeeklyTitle")}
+                  </h4>
+                  <p className="text-xs text-muted-foreground">
+                    {t("recurringWeeklyDesc")}
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {WEEKDAYS.map((dayName, idx) => {
+                    const existing = holidays.find(
+                      (h) => h.is_recurring_weekly && h.recurring_weekday === idx
+                    )
+                    const isChecked = Boolean(existing)
+
+                    return (
+                      <label
+                        key={dayName}
+                        className={`flex items-center gap-2.5 p-3 rounded-xl border text-xs font-semibold cursor-pointer transition-all ${
+                          isChecked
+                            ? "bg-indigo-50 border-indigo-200 text-indigo-700 dark:bg-indigo-950/40 dark:border-indigo-800 dark:text-indigo-300"
+                            : "bg-card border-slate-200 text-slate-700 hover:bg-slate-50 dark:border-slate-800 dark:text-slate-300"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={async (e) => {
+                            const checked = e.target.checked
+                            if (checked) {
+                              try {
+                                const res = await fetch("/api/v1/facility-holidays", {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({
+                                    label: `Weekly Day Off (${dayName})`,
+                                    isRecurringWeekly: true,
+                                    recurringWeekday: idx,
+                                  }),
+                                })
+                                if (res.ok) {
+                                  toast.success(t("recurringAddSuccess", { day: dayName }))
+                                  fetchHolidaysData()
+                                }
+                              } catch {
+                                toast.error(t("recurringError"))
+                              }
+                            } else if (existing) {
+                              try {
+                                const res = await fetch(`/api/v1/facility-holidays/${existing.id}`, {
+                                  method: "DELETE",
+                                })
+                                if (res.ok) {
+                                  toast.success(t("recurringRemoveSuccess", { day: dayName }))
+                                  fetchHolidaysData()
+                                }
+                              } catch {
+                                toast.error(t("recurringError"))
+                              }
+                            }
+                          }}
+                          className="rounded text-indigo-600 focus:ring-indigo-500 size-4"
+                        />
+                        <span>{dayName}</span>
+                      </label>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Specific Holiday Dates */}
+              <div className="space-y-4 pt-4 border-t border-slate-200 dark:border-slate-800">
+                <div>
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                    {t("specificHolidaysTitle")}
+                  </h4>
+                  <p className="text-xs text-muted-foreground">
+                    {t("specificHolidaysDesc")}
+                  </p>
+                </div>
+
+                {/* Add Specific Holiday Form */}
+                <form
+                  onSubmit={async (e) => {
+                    e.preventDefault()
+                    if (!newHolidayLabel.trim() || !newHolidayDate) return
+                    setAddingHoliday(true)
+                    try {
+                      const res = await fetch("/api/v1/facility-holidays", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          label: newHolidayLabel.trim(),
+                          holidayDate: newHolidayDate,
+                          isRecurringWeekly: false,
+                        }),
+                      })
+                      if (res.ok) {
+                        toast.success(t("specificAddSuccess"))
+                        setNewHolidayLabel("")
+                        setNewHolidayDate("")
+                        fetchHolidaysData()
+                      } else {
+                        const err = await res.json()
+                        toast.error(err.error || t("specificAddError"))
+                      }
+                    } catch {
+                      toast.error(t("specificAddError"))
+                    } finally {
+                      setAddingHoliday(false)
+                    }
+                  }}
+                  className="flex flex-col sm:flex-row gap-3 items-end bg-slate-50 dark:bg-slate-900/60 p-4 rounded-2xl border border-slate-200 dark:border-slate-800"
+                >
+                  <div className="flex-1 space-y-1 w-full">
+                    <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                      {t("holidayLabel")}
+                    </Label>
+                    <Input
+                      type="text"
+                      value={newHolidayLabel}
+                      onChange={(e) => setNewHolidayLabel(e.target.value)}
+                      placeholder={t("holidayLabelPlaceholder")}
+                      required
+                      className="h-9 text-xs bg-card"
+                    />
+                  </div>
+
+                  <div className="w-full sm:w-48 space-y-1">
+                    <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                      {t("holidayDate")}
+                    </Label>
+                    <Input
+                      type="date"
+                      value={newHolidayDate}
+                      onChange={(e) => setNewHolidayDate(e.target.value)}
+                      required
+                      className="h-9 text-xs bg-card"
+                    />
+                  </div>
+
+                  <Button
+                    type="submit"
+                    disabled={addingHoliday || !newHolidayLabel.trim() || !newHolidayDate}
+                    className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold h-9 px-4 rounded-xl gap-1.5 w-full sm:w-auto shrink-0 shadow-xs"
+                  >
+                    {addingHoliday ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <Plus className="size-3.5" />
+                    )}
+                    <span>{t("addHoliday")}</span>
+                  </Button>
+                </form>
+
+                {/* List of Specific Holidays */}
+                {loadingHolidays ? (
+                  <div className="flex items-center justify-center py-8 text-slate-400">
+                    <Loader2 className="size-6 animate-spin" />
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {holidays.filter((h) => !h.is_recurring_weekly).length === 0 ? (
+                      <p className="text-xs text-muted-foreground text-center py-6 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl">
+                        {t("noSpecificHolidays")}
+                      </p>
+                    ) : (
+                      holidays
+                        .filter((h) => !h.is_recurring_weekly)
+                        .map((h) => (
+                          <div
+                            key={h.id}
+                            className="flex items-center justify-between p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-card hover:bg-slate-50/50 dark:hover:bg-slate-900/30 transition-colors"
+                          >
+                            <div>
+                              <div className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                                {h.label}
+                              </div>
+                              <div className="text-[11px] text-slate-500 font-mono mt-0.5">
+                                {h.holiday_date}
+                              </div>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={async () => {
+                                try {
+                                  const res = await fetch(`/api/v1/facility-holidays/${h.id}`, {
+                                    method: "DELETE",
+                                  })
+                                  if (res.ok) {
+                                    toast.success(t("holidayDeleted"))
+                                    fetchHolidaysData()
+                                  }
+                                } catch {
+                                  toast.error(t("holidayDeleteError"))
+                                }
+                              }}
+                              className="h-8 w-8 p-0 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+                            >
+                              <Trash2 className="size-4" />
+                            </Button>
+                          </div>
+                        ))
+                    )}
+                  </div>
                 )}
               </div>
             </CardContent>

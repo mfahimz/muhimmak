@@ -45,7 +45,7 @@ export async function getUsers(_request: Request): Promise<NextResponse> {
 
   const { data: users, error } = await auth.admin
     .from('profiles')
-    .select('id, full_name, role, is_active, created_at')
+    .select('id, full_name, role, is_active, created_at, notification_email')
     .order('created_at', { ascending: false });
 
   if (error) {
@@ -66,7 +66,7 @@ export async function createUser(request: Request): Promise<NextResponse> {
     return NextResponse.json({ error: 'Invalid JSON request body' }, { status: 400 });
   }
 
-  const { fullName, role } = body || {};
+  const { fullName, role, notificationEmail } = body || {};
 
   if (!fullName || typeof fullName !== 'string' || fullName.trim() === '') {
     return NextResponse.json({ error: 'Full name is required' }, { status: 400 });
@@ -120,8 +120,9 @@ export async function createUser(request: Request): Promise<NextResponse> {
       pin_hash: pinHash,
       is_active: true,
       preferred_locale: 'en',
+      notification_email: notificationEmail && typeof notificationEmail === 'string' && notificationEmail.trim() ? notificationEmail.trim() : null,
     })
-    .select('id, full_name, role, is_active, created_at')
+    .select('id, full_name, role, is_active, created_at, notification_email')
     .single();
 
   if (profileError || !profile) {
@@ -171,11 +172,11 @@ export async function updateUser(request: Request, userIdParam?: string): Promis
     return NextResponse.json({ error: 'User ID is required' }, { status: 400 });
   }
 
-  const { fullName, role } = body;
+  const { fullName, role, notificationEmail } = body;
 
-  if (fullName === undefined && role === undefined) {
+  if (fullName === undefined && role === undefined && notificationEmail === undefined) {
     return NextResponse.json(
-      { error: 'At least one of fullName or role must be provided' },
+      { error: 'At least one of fullName, role or notificationEmail must be provided' },
       { status: 400 }
     );
   }
@@ -208,6 +209,11 @@ export async function updateUser(request: Request, userIdParam?: string): Promis
     changedFields.push('role');
   }
 
+  if (notificationEmail !== undefined) {
+    updateFields.notification_email = (typeof notificationEmail === 'string' && notificationEmail.trim() !== '') ? notificationEmail.trim() : null;
+    changedFields.push('notification_email');
+  }
+
   if (Object.keys(updateFields).length === 0) {
     return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 });
   }
@@ -216,7 +222,7 @@ export async function updateUser(request: Request, userIdParam?: string): Promis
     .from('profiles')
     .update(updateFields)
     .eq('id', userId)
-    .select('id, full_name, role, is_active, created_at')
+    .select('id, full_name, role, is_active, created_at, notification_email')
     .single();
 
   if (error || !updatedProfile) {
@@ -281,7 +287,7 @@ export async function setUserActiveStatus(
     .from('profiles')
     .update({ is_active: isActive })
     .eq('id', userId)
-    .select('id, full_name, role, is_active, created_at')
+    .select('id, full_name, role, is_active, created_at, notification_email')
     .single();
 
   if (error || !updatedProfile) {
@@ -345,7 +351,7 @@ export async function resetUserPin(
       locked_until: null,
     })
     .eq('id', userId)
-    .select('id, full_name, role, is_active, created_at')
+    .select('id, full_name, role, is_active, created_at, notification_email')
     .single();
 
   if (error || !updatedProfile) {

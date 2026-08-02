@@ -29,12 +29,16 @@
     "btnStartSession": "Start Session",
     "startSession": "Start Session",
     "detailedReports": "Detailed Reports",
+    "navGroupAnalytics": "Analytics",
+    "navGroupManage": "Manage",
+    "navGroupAdmin": "Admin",
     "nav": {
       "Dashboard": "Dashboard",
       "Detailed Reports": "Detailed Reports",
       "Forms": "Forms",
       "Sessions": "Sessions",
       "Pending Closures": "Pending Closures",
+      "Daily QR": "Daily QR",
       "Users": "Users",
       "Settings": "Settings"
     }
@@ -197,7 +201,30 @@
     "roleReceptionist": "Receptionist",
     "roleManager": "Manager",
     "roleAgm": "AGM",
-    "roleCeo": "CEO"
+    "roleCeo": "CEO",
+    "holidaysTab": "Holidays",
+    "holidaysTitle": "Holiday Calendar & QR Rotation",
+    "holidaysSubtitle": "Manage automatic QR rotation settings, recurring weekly days off, and specific facility holiday closures.",
+    "rotationToggleTitle": "Daily QR Rotation Enabled",
+    "rotationToggleDesc": "When enabled, customer feedback QR codes rotate automatically every morning. On scheduled holidays or when disabled, rotation is skipped.",
+    "rotationToggleSuccess": "Rotation setting updated",
+    "rotationToggleError": "Failed to update rotation setting",
+    "recurringWeeklyTitle": "Recurring Weekly Days Off",
+    "recurringWeeklyDesc": "Check the days when the facility is regularly closed. QR rotation will be skipped on these days.",
+    "recurringAddSuccess": "Set {day} as weekly day off",
+    "recurringRemoveSuccess": "Removed {day} from weekly days off",
+    "recurringError": "Failed to update weekly day off",
+    "specificHolidaysTitle": "Specific Holiday Dates",
+    "specificHolidaysDesc": "Add specific dates (e.g. Eid, National Day) when the facility will be closed.",
+    "holidayLabel": "Holiday Label",
+    "holidayLabelPlaceholder": "e.g. UAE National Day",
+    "holidayDate": "Date",
+    "addHoliday": "Add Holiday",
+    "specificAddSuccess": "Holiday added successfully",
+    "specificAddError": "Failed to add holiday",
+    "noSpecificHolidays": "No specific holiday dates recorded.",
+    "holidayDeleted": "Holiday removed",
+    "holidayDeleteError": "Failed to delete holiday"
   },
   "Sessions": {
     "title": "Sessions",
@@ -439,6 +466,7 @@
     "editUser": "Edit User",
     "name": "Full Name",
     "namePlaceholder": "e.g. Ahmed Al Mansoori",
+    "notificationEmail": "Notification Email",
     "role": "Role",
     "status": "Status",
     "createdAt": "Created",
@@ -608,5 +636,26 @@
       "pickUpDescription": "Picking up your vehicle after service completion",
       "back": "Back to edit plate"
     }
+  },
+  "DailyQr": {
+    "title": "Daily Feedback QR Code",
+    "subtitle": "Active customer feedback link and QR code for today",
+    "statusActive": "Rotated Today",
+    "statusHoliday": "Skipped (Holiday)",
+    "statusDisabled": "Rotation Disabled",
+    "statusPending": "Pending Rotation",
+    "holiday": "Holiday",
+    "cardTitle": "Today's Customer Feedback QR Code",
+    "cardDescription": "Present or print this QR code for customers to scan and submit feedback today.",
+    "copyLink": "Copy Link",
+    "copied": "Copied!",
+    "linkCopied": "Feedback link copied to clipboard!",
+    "openInNewTab": "Open in new tab",
+    "holidayNoticeTitle": "Facility Closed Today",
+    "holidayNoticeDesc": "Daily QR rotation was skipped today because of a scheduled holiday: {holiday}.",
+    "disabledNoticeTitle": "QR Rotation Disabled",
+    "disabledNoticeDesc": "Daily QR rotation is currently disabled in Facility Settings.",
+    "pendingNoticeTitle": "QR Code Pending",
+    "pendingNoticeDesc": "No active rotating QR token was generated for today."
   }
 }

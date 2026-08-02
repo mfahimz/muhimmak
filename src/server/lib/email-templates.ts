@@ -193,3 +193,34 @@ export function weeklySummaryEmail(data: {
     html: buildEmailWrapper(content),
   };
 }
+
+export function dailyQrEmail(data: {
+  feedbackUrl: string;
+  dateLabel: string;
+  qrCid?: string;
+}): { subject: string; html: string } {
+  const imageTag = data.qrCid
+    ? `<div style="text-align:center;margin:24px 0;"><img src="cid:${data.qrCid}" alt="Daily Feedback QR Code" style="width:220px;height:220px;border-radius:16px;border:4px solid #334155;background:#ffffff;padding:12px;display:inline-block;" /></div>`
+    : '';
+
+  const content = `
+    <h2 style="margin:0 0 6px 0;font-size:20px;font-weight:600;color:#f1f5f9;">Today's Feedback QR Code</h2>
+    <p style="margin:0 0 20px 0;font-size:13px;color:#94a3b8;">${data.dateLabel}</p>
+    <p style="margin:0 0 16px 0;font-size:14px;color:#cbd5e1;line-height:1.6;">
+      Here is the updated daily QR code for customer feedback. Please display or present this QR code to customers today.
+    </p>
+
+    ${imageTag}
+
+    <div style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:16px;margin:20px 0;text-align:center;word-break:break-all;">
+      <p style="margin:0 0 8px 0;font-size:11px;font-weight:600;color:#818cf8;text-transform:uppercase;letter-spacing:1px;">Direct Link</p>
+      <a href="${data.feedbackUrl}" target="_blank" style="font-size:14px;color:#38bdf8;text-decoration:underline;">${data.feedbackUrl}</a>
+    </div>
+  `;
+
+  return {
+    subject: `[Muhimmak] Daily QR Feedback Link — ${data.dateLabel}`,
+    html: buildEmailWrapper(content),
+  };
+}
+
