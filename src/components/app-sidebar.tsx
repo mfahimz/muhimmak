@@ -50,33 +50,33 @@ const TOP_NAV_ITEMS: NavItem[] = [
     icon: LayoutDashboard,
     roles: ["super_admin", "ceo", "agm", "manager", "receptionist"],
   },
-  {
-    title: "Sessions",
-    url: "/dashboard/sessions",
-    icon: ClipboardList,
-    roles: ["super_admin", "ceo", "agm", "manager", "receptionist"],
-  },
-  {
-    title: "Pending Closures",
-    url: "/dashboard/pending-closures",
-    icon: ClockAlert,
-    roles: ["super_admin", "ceo", "agm", "manager", "receptionist"],
-  },
-  {
-    title: "Daily QR",
-    url: "/dashboard/daily-qr",
-    icon: QrCode,
-    roles: ["super_admin", "ceo", "agm", "manager", "receptionist"],
-  },
 ]
 
 const NAV_GROUPS: NavGroup[] = [
+  {
+    titleKey: "navGroupOperations",
+    fallbackTitle: "Operations",
+    items: [
+      {
+        title: "Feedback Sessions",
+        url: "/dashboard/sessions",
+        icon: ClipboardList,
+        roles: ["super_admin", "ceo", "agm", "manager", "receptionist"],
+      },
+      {
+        title: "QR Code",
+        url: "/dashboard/daily-qr",
+        icon: QrCode,
+        roles: ["super_admin", "ceo", "agm", "manager", "receptionist"],
+      },
+    ],
+  },
   {
     titleKey: "navGroupAnalytics",
     fallbackTitle: "Analytics",
     items: [
       {
-        title: "detailedReports",
+        title: "Reports",
         url: "/dashboard/reports",
         icon: ChartNoAxesCombined,
         roles: ["super_admin", "ceo", "agm", "manager"],
@@ -88,13 +88,13 @@ const NAV_GROUPS: NavGroup[] = [
     fallbackTitle: "Manage",
     items: [
       {
-        title: "Forms",
+        title: "Feedback Forms",
         url: "/dashboard/forms",
         icon: FileText,
         roles: ["super_admin", "ceo", "agm"],
       },
       {
-        title: "Users",
+        title: "Team",
         url: "/dashboard/users",
         icon: Users,
         roles: ["super_admin", "ceo"],
@@ -172,8 +172,7 @@ function CollapsibleNavGroup({
                 item.url === "/dashboard"
                   ? pathname === "/dashboard"
                   : pathname === item.url || pathname.startsWith(item.url + "/")
-              const translationKey =
-                item.title === "detailedReports" ? "detailedReports" : `nav.${item.title}`
+              const translationKey = `nav.${item.title}`
 
               return (
                 <SidebarMenuItem key={item.title}>
@@ -268,7 +267,7 @@ export function AppSidebar({ user, ...props }: AppSidebarProps) {
                   item.url === "/dashboard"
                     ? pathname === "/dashboard"
                     : pathname === item.url || pathname.startsWith(item.url + "/")
-                const translationKey = item.title === "detailedReports" ? "detailedReports" : `nav.${item.title}`
+                const translationKey = `nav.${item.title}`
 
                 return (
                   <SidebarMenuItem key={item.title}>

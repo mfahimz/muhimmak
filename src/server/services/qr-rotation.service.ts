@@ -236,3 +236,101 @@ export async function validateQrToken(token: string): Promise<boolean> {
     settings.qr_token_date === todayDateStr
   );
 }
+
+/**
+ * Generates a test/preview QR token and URL without updating DB or sending emails
+ */
+export async function generateTestQr(): Promise<{ token: string; url: string }> {
+  const token = crypto.randomUUID();
+  const url = `https://muhimmak.misalm.com/feedback/${token}`;
+  return { token, url };
+}
+
+/**
+ * Manually rotates the daily QR token immediately, bypassing rotation enabled and holiday checks
+ */
+export async function resetQrNow(): Promise<{
+  skipped: boolean;
+  token?: string;
+  url?: string;
+  recipientCount?: number;
+}> {
+  const admin = createAdminClient();
+  const todayDateStr = await getUaeDateString();
+
+  // 1. Generate token & full URL
+  const token = crypto.randomUUID();
+  const fullUrl = `https://muhimmak.misalm.com/feedback/${token}`;
+
+  // 2. Update facility_settings singleton
+  const { error: updateError } = await admin
+    .from('facility_settings')
+    .update({
+      current_qr_token: token,
+      qr_token_date: todayDateStr,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', '00000000-0000-0000-0000-000000000000');
+
+  if (updateError) {
+    throw new Error(`Failed to update QR token in database: ${updateError.message}`);
+  }
+
+  // 3. Generate QR Code PNG Buffer
+  const qrBuffer = await QRCode.toBuffer(fullUrl, {
+    type: 'png',
+    margin: 1,
+    width: 400,
+  });
+
+  // 4. Query recipient notification emails
+  const { data: recipients } = await admin
+    .from('profiles')
+    .select('notification_email')
+    .eq('is_active', true)
+    .not('notification_email', 'is', null);
+
+  const emailList = (recipients || [])
+    .map((r) => r.notification_email?.trim())
+    .filter((e): e is string => Boolean(e && e.includes('@')));
+
+  let recipientCount = 0;
+
+  if (emailList.length > 0) {
+    const template = dailyQrEmail({
+      feedbackUrl: fullUrl,
+      dateLabel: todayDateStr,
+      qrCid: 'qrcode',
+      isManualReset: true,
+    });
+
+    const sendPromises = emailList.map((recipientEmail) =>
+      resend.emails.send({
+        from: RESEND_FROM,
+        to: recipientEmail,
+        subject: template.subject,
+        html: template.html,
+        attachments: [
+          {
+            filename: 'qrcode.png',
+            content: qrBuffer,
+            contentId: 'qrcode',
+          },
+        ],
+      }).catch((err) => {
+        console.error(`Failed to send daily QR reset email to ${recipientEmail}:`, err);
+        return null;
+      })
+    );
+
+    await Promise.all(sendPromises);
+    recipientCount = emailList.length;
+  }
+
+  return {
+    skipped: false,
+    token,
+    url: fullUrl,
+    recipientCount,
+  };
+}

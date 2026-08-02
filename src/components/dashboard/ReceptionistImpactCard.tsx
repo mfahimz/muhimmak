@@ -151,7 +151,7 @@ export default function ReceptionistImpactCard({
             </div>
           </div>
           <Link
-            href="/dashboard/pending-closures"
+            href="/dashboard/sessions?tab=open-visits"
             className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 active:scale-[0.98] px-4 py-2 text-xs font-bold text-white shadow-xs transition-all cursor-pointer shrink-0"
           >
             <span>{t("viewPendingClosures")}</span>

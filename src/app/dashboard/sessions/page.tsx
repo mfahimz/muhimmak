@@ -5,9 +5,11 @@ import { SiteHeader } from "@/components/site-header"
 import { getTranslations } from "next-intl/server"
 import { decryptPlate } from "@/lib/utils/plate-number"
 import { SessionsListClient, type SessionItem } from "./SessionsListClient"
+import { type PendingClosureItem } from "../pending-closures/PendingClosuresClient"
 
 interface PageProps {
   searchParams: Promise<{
+    tab?: string
     page?: string
     status?: string
     from?: string
@@ -46,6 +48,7 @@ export default async function SessionsPage({ searchParams }: PageProps) {
 
   // Resolve search parameters
   const resolvedParams = await searchParams
+  const tab = resolvedParams.tab === "open-visits" ? "open-visits" : "all"
   const page = Number(resolvedParams.page) || 1
   const status = resolvedParams.status || ""
   const from = resolvedParams.from || ""
@@ -55,7 +58,7 @@ export default async function SessionsPage({ searchParams }: PageProps) {
   const fromIndex = (page - 1) * pageSize
   const toIndex = fromIndex + pageSize - 1
 
-  // Build query
+  // Build query for sessions
   let query = supabase
     .from("sessions")
     .select(`
@@ -88,12 +91,10 @@ export default async function SessionsPage({ searchParams }: PageProps) {
   }
 
   if (from) {
-    // Start of the day in UTC
     query = query.gte("started_at", `${from}T00:00:00.000Z`)
   }
 
   if (to) {
-    // End of the day in UTC
     query = query.lte("started_at", `${to}T23:59:59.999Z`)
   }
 
@@ -116,6 +117,60 @@ export default async function SessionsPage({ searchParams }: PageProps) {
     }
   })
 
+  // Fetch pending closures data
+  const { data: closuresData, error: closuresError } = await admin
+    .from("visit_closures")
+    .select(`
+      id,
+      session_id,
+      plate_number_hash,
+      flagged_at,
+      status,
+      invoice_number,
+      resolved_by,
+      resolved_at,
+      notified_at,
+      created_at,
+      sessions:session_id (
+        id,
+        created_at,
+        plate_number_encrypted
+      ),
+      profiles:resolved_by (
+        full_name
+      )
+    `)
+    .order("flagged_at", { ascending: true })
+
+  const rawClosures = closuresData || []
+
+  const closures: PendingClosureItem[] = rawClosures.map((row: any) => {
+    const sessionObj = Array.isArray(row.sessions) ? row.sessions[0] : row.sessions
+    const profileObj = Array.isArray(row.profiles) ? row.profiles[0] : row.profiles
+
+    const encryptedPlate = sessionObj?.plate_number_encrypted || null
+    const decryptedPlate = encryptedPlate ? decryptPlate(encryptedPlate) : "UNKNOWN"
+    const dropOffCreatedAt = sessionObj?.created_at || row.created_at
+
+    const daysElapsed = dropOffCreatedAt
+      ? Math.max(0, Math.floor((Date.now() - new Date(dropOffCreatedAt).getTime()) / (1000 * 60 * 60 * 24)))
+      : 0
+
+    return {
+      id: row.id,
+      sessionId: row.session_id,
+      plateNumber: decryptedPlate || "UNKNOWN",
+      status: row.status,
+      invoiceNumber: row.invoice_number || null,
+      resolvedBy: row.resolved_by || null,
+      resolverName: profileObj?.full_name || null,
+      resolvedAt: row.resolved_at || null,
+      flaggedAt: row.flagged_at,
+      dropOffCreatedAt: dropOffCreatedAt,
+      daysElapsed: daysElapsed,
+    }
+  })
+
   return (
     <>
       <SiteHeader title={t("title")} />
@@ -129,7 +184,7 @@ export default async function SessionsPage({ searchParams }: PageProps) {
           </div>
         </div>
 
-        {sessionsError && (
+        {(sessionsError || closuresError) && (
           <div className="p-4 rounded-xl bg-rose-50/50 border border-rose-100 text-rose-600 text-sm font-medium">
             {t("errorLoading")}
           </div>
@@ -137,11 +192,14 @@ export default async function SessionsPage({ searchParams }: PageProps) {
 
         <SessionsListClient
           sessions={sessions}
+          closures={closures}
           role={role}
+          currentUserId={user.id}
           totalCount={totalCount}
           currentPage={page}
           pageSize={pageSize}
           filters={{ status, from, to }}
+          initialTab={tab}
         />
       </div>
     </>

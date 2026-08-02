@@ -28,18 +28,18 @@
     "logoAlt": "Al Maraghi Emblem",
     "btnStartSession": "Start Session",
     "startSession": "Start Session",
-    "detailedReports": "Detailed Reports",
+    "detailedReports": "Reports",
+    "navGroupOperations": "Operations",
     "navGroupAnalytics": "Analytics",
     "navGroupManage": "Manage",
     "navGroupAdmin": "Admin",
     "nav": {
       "Dashboard": "Dashboard",
-      "Detailed Reports": "Detailed Reports",
-      "Forms": "Forms",
-      "Sessions": "Sessions",
-      "Pending Closures": "Pending Closures",
-      "Daily QR": "Daily QR",
-      "Users": "Users",
+      "Feedback Sessions": "Feedback Sessions",
+      "QR Code": "QR Code",
+      "Reports": "Reports",
+      "Feedback Forms": "Feedback Forms",
+      "Team": "Team",
       "Settings": "Settings"
     }
   },
@@ -96,7 +96,7 @@
     }
   },
   "Forms": {
-    "title": "Forms",
+    "title": "Feedback Forms",
     "newForm": "New Form",
     "editForm": "Edit Form",
     "noForms": "No forms created yet",
@@ -227,8 +227,10 @@
     "holidayDeleteError": "Failed to delete holiday"
   },
   "Sessions": {
-    "title": "Sessions",
+    "title": "Feedback Sessions",
     "subtitle": "Monitor active customer queues and completed feedback sessions.",
+    "tabAllSessions": "All Sessions",
+    "tabOpenVisits": "Open Visits",
     "colForm": "Form",
     "colLanguage": "Language",
     "colStatus": "Status",
@@ -460,7 +462,7 @@
     "viewPendingClosures": "View"
   },
   "Users": {
-    "title": "Staff Management",
+    "title": "Team",
     "subtitle": "Manage staff members, assign roles, create accounts, and manage PINs.",
     "createUser": "Create User",
     "editUser": "Edit User",
@@ -518,7 +520,7 @@
     }
   },
   "Reports": {
-    "title": "Reports & Analytics",
+    "title": "Reports",
     "subtitle": "Comprehensive analytics, satisfaction trends, and performance metrics",
     "dateRangeLabel": "Date Range",
     "preset7d": "Last 7 Days",
@@ -638,7 +640,7 @@
     }
   },
   "DailyQr": {
-    "title": "Daily Feedback QR Code",
+    "title": "QR Code",
     "subtitle": "Active customer feedback link and QR code for today",
     "statusActive": "Rotated Today",
     "statusHoliday": "Skipped (Holiday)",
@@ -656,6 +658,18 @@
     "disabledNoticeTitle": "QR Rotation Disabled",
     "disabledNoticeDesc": "Daily QR rotation is currently disabled in Facility Settings.",
     "pendingNoticeTitle": "QR Code Pending",
-    "pendingNoticeDesc": "No active rotating QR token was generated for today."
+    "pendingNoticeDesc": "No active rotating QR token was generated for today.",
+    "generateTestQr": "Generate Test QR",
+    "resetQrNow": "Reset Live QR Now",
+    "resetConfirmTitle": "Reset Live QR Code Now?",
+    "resetConfirmDesc": "This will invalidate the current QR code immediately and generate a new one. An email will be sent to all staff. Continue?",
+    "testQrPreviewNotice": "This is a preview only — not the live QR, not saved, no email sent.",
+    "resetSuccess": "Live QR code updated and emails dispatched successfully.",
+    "resetError": "Failed to reset live QR code.",
+    "testQrError": "Failed to generate test QR code.",
+    "confirmReset": "Confirm Reset",
+    "cancel": "Cancel",
+    "testQrTitle": "Test QR Code Preview",
+    "close": "Close"
   }
 }
