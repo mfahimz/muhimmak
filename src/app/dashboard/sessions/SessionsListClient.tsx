@@ -92,7 +92,7 @@ export function SessionsListClient({
     initialTab === "open-visits" ? "open-visits" : "all"
   )
 
-  const [statusVal, setStatusVal] = React.useState(filters.status)
+  const [statusVal, setStatusVal] = React.useState("")
   const [fromVal, setFromVal] = React.useState(filters.from)
   const [toVal, setToVal] = React.useState(filters.to)
   const [searchQuery, setSearchQuery] = React.useState("")
@@ -105,10 +105,6 @@ export function SessionsListClient({
       setActiveTab("all")
     }
   }, [initialTab])
-
-  React.useEffect(() => {
-    setStatusVal(filters.status)
-  }, [filters.status])
 
   React.useEffect(() => {
     setFromVal(filters.from)
@@ -132,20 +128,18 @@ export function SessionsListClient({
     router.push(`${pathname}${queryString ? `?${queryString}` : ""}`)
   }
 
-  const updateUrl = (newFilters: { status?: string; from?: string; to?: string; page?: string }) => {
+  const updateUrl = (newFilters: { from?: string; to?: string; page?: string }) => {
     const params = new URLSearchParams(searchParams ? searchParams.toString() : "")
 
-    const currentStatus = newFilters.status !== undefined ? newFilters.status : statusVal
     const currentFrom = newFilters.from !== undefined ? newFilters.from : fromVal
     const currentTo = newFilters.to !== undefined ? newFilters.to : toVal
 
-    const isFilterChange =
-      newFilters.status !== undefined || newFilters.from !== undefined || newFilters.to !== undefined
+    const isFilterChange = newFilters.from !== undefined || newFilters.to !== undefined
 
     const nextPage = isFilterChange ? "1" : (newFilters.page || String(currentPage))
 
-    if (currentStatus) params.set("status", currentStatus)
-    else params.delete("status")
+    // Remove status param from URL since status filtering is client-side state
+    params.delete("status")
 
     if (currentFrom) params.set("from", currentFrom)
     else params.delete("from")
@@ -166,7 +160,6 @@ export function SessionsListClient({
 
   const handleStatusChange = (val: string) => {
     setStatusVal(val)
-    updateUrl({ status: val })
   }
 
   const handleFromChange = (val: string) => {
@@ -219,20 +212,33 @@ export function SessionsListClient({
     router.push(`${pathname}${queryString ? `?${queryString}` : ""}`)
   }
 
-  const hasActiveFilters = filters.status || filters.from || filters.to || searchQuery
+  const hasActiveFilters = Boolean(statusVal || filters.from || filters.to || searchQuery)
 
-  // Filter client-side by instant search query
+  // Filter client-side by statusVal and instant search query
   const filteredSessions = React.useMemo(() => {
-    if (!searchQuery.trim()) return sessions
-    const q = searchQuery.trim().toLowerCase()
     return sessions.filter((s) => {
-      const formName = (s.forms?.name || "").toLowerCase()
-      const plate = (s.plate_number || "").toLowerCase()
-      const lang = (s.language || "").toLowerCase()
-      const id = s.id.toLowerCase()
-      return formName.includes(q) || plate.includes(q) || lang.includes(q) || id.includes(q)
+      if (statusVal) {
+        if (statusVal === "abandoned") {
+          if (s.status !== "abandoned" && s.status !== "started") return false
+        } else if (s.status !== statusVal) {
+          return false
+        }
+      }
+
+      if (searchQuery.trim()) {
+        const q = searchQuery.trim().toLowerCase()
+        const formName = (s.forms?.name || "").toLowerCase()
+        const plate = (s.plate_number || "").toLowerCase()
+        const lang = (s.language || "").toLowerCase()
+        const id = s.id.toLowerCase()
+        if (!formName.includes(q) && !plate.includes(q) && !lang.includes(q) && !id.includes(q)) {
+          return false
+        }
+      }
+
+      return true
     })
-  }, [sessions, searchQuery])
+  }, [sessions, statusVal, searchQuery])
 
   const formatDateTime = (dateStr: string | null) => {
     if (!dateStr) return "—"

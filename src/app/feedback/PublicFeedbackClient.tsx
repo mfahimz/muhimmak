@@ -34,6 +34,7 @@ export function PublicFeedbackClient({
 }: PublicFeedbackClientProps) {
   const router = useRouter()
   const [locale, setLocale] = React.useState<"en" | "ar">(initialLocale)
+  const [languageSwitches, setLanguageSwitches] = React.useState<number>(0)
   const [currentStep, setCurrentStep] = React.useState<"language" | "details" | "stage" | "duplicate" | "survey">("language")
 
   // Customer Input State
@@ -146,6 +147,7 @@ export function PublicFeedbackClient({
   // Language toggle for step 2
   const handleToggleLanguage = (newLang: "en" | "ar") => {
     if (newLang === locale) return
+    setLanguageSwitches(prev => prev + 1)
     setLocale(newLang)
     document.cookie = `NEXT_LOCALE=${newLang}; path=/; max-age=31536000; SameSite=Lax`
     router.refresh()
@@ -599,6 +601,7 @@ export function PublicFeedbackClient({
             form={form}
             facilitySettings={facilitySettings}
             isPublicMode={true}
+            initialLanguageSwitches={languageSwitches}
           />
         </div>
         <div className="flex justify-center p-4 w-full">

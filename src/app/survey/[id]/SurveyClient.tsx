@@ -51,6 +51,7 @@ interface SurveyClientProps {
     display_orientation?: string
   }
   isPublicMode?: boolean
+  initialLanguageSwitches?: number
 }
 
 function isFieldVisible(field: SurveyField, answers: Record<string, any>): boolean {
@@ -72,12 +73,20 @@ function isFieldVisible(field: SurveyField, answers: Record<string, any>): boole
   }
 }
 
-export function SurveyClient({ session, plateNumber, form, facilitySettings, isPublicMode }: SurveyClientProps) {
+export function SurveyClient({ session, plateNumber, form, facilitySettings, isPublicMode, initialLanguageSwitches }: SurveyClientProps) {
   const router = useRouter()
   const t = useTranslations("Survey")
 
   const isPublic = Boolean(isPublicMode || !(session as any).created_by || (session as any).channel === 'public_qr')
   const isFitToScreen = facilitySettings?.display_orientation === 'fit_to_screen'
+
+  // Interaction Tracking refs
+  const backButtonCountRef = React.useRef(0)
+  const languageSwitchesRef = React.useRef(initialLanguageSwitches || 0)
+  const timePerQuestionRef = React.useRef<Record<string, number>>({})
+  const questionStartTimeRef = React.useRef<number>(Date.now())
+  const closingQuestionAiRef = React.useRef<{ attempted: boolean; succeeded: boolean; latency_ms: number } | null>(null)
+  const trackedQrRef = React.useRef(false)
   
   // Parse fields
   const fields = React.useMemo(() => {
@@ -138,6 +147,49 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
     return isClosing && !isArabic && !lockedClosingQuestion
   }, [isClosing, isArabic, lockedClosingQuestion])
 
+  const recordTimeForCurrentQuestion = React.useCallback(() => {
+    if (!currentField?.id) return
+    const elapsed = Date.now() - questionStartTimeRef.current
+    const prev = timePerQuestionRef.current[currentField.id] || 0
+    timePerQuestionRef.current[currentField.id] = prev + elapsed
+    questionStartTimeRef.current = Date.now()
+  }, [currentField?.id])
+
+  // Heartbeat/last_seen update when active field changes in survey step
+  React.useEffect(() => {
+    if (step === "survey" && currentField?.id) {
+      questionStartTimeRef.current = Date.now()
+      fetch("/api/v1/sessions/update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: session.id,
+          action: "last_seen",
+          lastSeenFieldId: currentField.id,
+        }),
+        keepalive: true,
+      }).catch(() => {})
+    }
+  }, [step, currentField?.id, session.id])
+
+  // PHASE 2 NOTE: google_review_qr_shown only confirms the QR code was 
+  // displayed on screen, NOT that a customer actually scanned it with 
+  // their phone camera. There is no reliable way to detect an actual 
+  // scan from the kiosk side. When Phase 2 kiosk mode is reactivated, 
+  // this metric should be clearly labeled "QR Displayed" (not "Clicked") 
+  // in any reporting UI to avoid misleading conversion numbers.
+  React.useEffect(() => {
+    if (step === "completed" && showQr && !isPublic && !trackedQrRef.current) {
+      trackedQrRef.current = true
+      fetch('/api/v1/sessions/track-review-qr-shown', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: session.id }),
+        keepalive: true,
+      }).catch(() => {})
+    }
+  }, [step, showQr, isPublic, session.id])
+
   // AI text scoring states
   const [textScores, setTextScores] = React.useState<Record<string, number>>({})
   const [pendingTextFields, setPendingTextFields] = React.useState<Set<string>>(new Set())
@@ -162,6 +214,7 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
     if (isAr || !session.visit_stage || aiClosingQuestionStatus !== 'idle') return
 
     setAiClosingQuestionStatus('pending')
+    const startAi = Date.now()
     
     // Prepare question labels
     const questionLabels: Record<string, string> = {}
@@ -184,11 +237,21 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
         return res.json()
       })
       .then(data => {
+        closingQuestionAiRef.current = {
+          attempted: true,
+          succeeded: true,
+          latency_ms: Date.now() - startAi,
+        }
         setAiClosingQuestion(data)
         setAiClosingQuestionStatus('ready')
       })
       .catch(err => {
         console.error("AI closing question generation failed:", err)
+        closingQuestionAiRef.current = {
+          attempted: true,
+          succeeded: false,
+          latency_ms: Date.now() - startAi,
+        }
         setAiClosingQuestionStatus('failed')
       })
   }, [session.id, session.visit_stage, session.language, fields, aiClosingQuestionStatus])
@@ -371,6 +434,7 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
 
   // Answer handlers
   const handleAnswer = (val: any, autoAdvance = true) => {
+    recordTimeForCurrentQuestion()
     setAnswers(prev => ({ ...prev, [currentField.id]: val }))
 
     // Trigger AI text scoring if field type is text and answer is non-empty
@@ -449,6 +513,7 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
 
   const handleSkip = () => {
     if (submitting) return
+    recordTimeForCurrentQuestion()
     setTextVal("")
     const nextVisibleFields = combinedFields.filter(f => isFieldVisible(f, answers))
     const isLastVisible = currentFieldIdx >= nextVisibleFields.length - 1
@@ -462,6 +527,7 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
 
   const handleNext = () => {
     if (submitting) return
+    recordTimeForCurrentQuestion()
     if (currentField?.type === "text") {
       if (textVal.trim()) {
         handleAnswer(textVal.trim(), true)
@@ -480,6 +546,8 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
 
   const handleBack = () => {
     if (currentFieldIdx > 0) {
+      recordTimeForCurrentQuestion()
+      backButtonCountRef.current += 1
       const prevField = visibleFields[currentFieldIdx - 1]
       setTextVal(answers[prevField.id] || "")
       setCurrentFieldIdx(prev => prev - 1)
@@ -492,10 +560,16 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
     isSubmittingSurvey.current = true
     setSubmitting(true)
 
+    recordTimeForCurrentQuestion()
+
     const isPending = pendingTextFields.size > 0
     if (isPending) {
       setWasPendingOnSubmit(true)
     }
+
+    const allFieldIds = combinedFields.map(f => f.id)
+    const visibleFieldIds = visibleFields.map(f => f.id)
+    const branchedAwayFieldIds = allFieldIds.filter(id => !visibleFieldIds.includes(id))
 
     const skippedList = visibleFields.filter(f => finalAnswers[f.id] === undefined || finalAnswers[f.id] === null)
     const skippedByTypes: Record<string, number> = {}
@@ -509,7 +583,19 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
         count: skippedList.length,
         byType: skippedByTypes,
         skippedFieldIds: skippedList.map(f => f.id)
+      },
+      _branchedAway: {
+        count: branchedAwayFieldIds.length,
+        fieldIds: branchedAwayFieldIds
       }
+    }
+
+    const interactionMetadata = {
+      time_per_question_ms: timePerQuestionRef.current,
+      back_button_count: backButtonCountRef.current,
+      language_switches: languageSwitchesRef.current,
+      last_seen_field_id: currentField?.id || null,
+      closing_question_ai: closingQuestionAiRef.current,
     }
 
     try {
@@ -523,6 +609,7 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
           textScores: textScores,
           isPendingScoring: isPending,
           deviceInfo: typeof window !== "undefined" ? window.navigator.userAgent : "kiosk_tablet",
+          interaction_metadata: interactionMetadata,
         }),
       })
 
@@ -544,7 +631,15 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
   // Abandon survey on inactivity timeout
   const handleAbandonSession = async () => {
     try {
+      recordTimeForCurrentQuestion()
       setStep("refused") // Show timeout/exited screen
+      const interactionMetadata = {
+        time_per_question_ms: timePerQuestionRef.current,
+        back_button_count: backButtonCountRef.current,
+        language_switches: languageSwitchesRef.current,
+        last_seen_field_id: currentField?.id || null,
+        closing_question_ai: closingQuestionAiRef.current,
+      }
       await fetch("/api/v1/sessions/update", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -553,6 +648,7 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
           action: "abandoned",
           answers: Object.keys(answers).length > 0 ? answers : null,
           deviceInfo: typeof window !== "undefined" ? window.navigator.userAgent : "kiosk_tablet",
+          interaction_metadata: interactionMetadata,
         }),
       })
       setTimeout(() => {
@@ -732,6 +828,14 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
                   href={facilitySettings.google_review_url}
                   target="_blank"
                   rel="noopener noreferrer"
+                  onClick={() => {
+                    fetch('/api/v1/sessions/track-review-click', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ sessionId: session.id }),
+                      keepalive: true,
+                    }).catch(() => {})
+                  }}
                   className="w-full inline-flex items-center justify-center gap-2 px-6 py-4 text-base font-bold bg-amber-500 hover:bg-amber-600 text-white rounded-2xl shadow-lg transition active:scale-98 cursor-pointer"
                 >
                   <ThumbsUp className="size-5" />

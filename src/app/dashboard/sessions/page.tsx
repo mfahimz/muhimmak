@@ -80,11 +80,7 @@ export default async function SessionsPage({ searchParams }: PageProps) {
       )
     `, { count: "exact" })
 
-  // Apply filters
-  if (status) {
-    query = query.eq("status", status)
-  }
-
+  // Apply date filters
   if (from) {
     query = query.gte("started_at", `${from}T00:00:00.000Z`)
   }

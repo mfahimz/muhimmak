@@ -11,18 +11,76 @@ import { getTranslations } from 'next-intl/server';
 const ALLOWED_ROLES = ['super_admin', 'ceo', 'agm', 'manager', 'receptionist'];
 const HIDE_PLATE_ROLES = ['manager', 'receptionist'];
 
-async function generateAiSummary(
-  answers: Record<string, any>,
-  fields: any[],
-  businessContext: string
-): Promise<string> {
+async function generateAiSummary({
+  answers,
+  fields,
+  businessContext,
+  isVisitJourney,
+  currentStage,
+  partnerAnswers,
+  partnerFields,
+  partnerStage,
+}: {
+  answers: Record<string, any>;
+  fields: any[];
+  businessContext: string;
+  isVisitJourney?: boolean;
+  currentStage?: 'drop_off' | 'pick_up' | null;
+  partnerAnswers?: Record<string, any>;
+  partnerFields?: any[];
+  partnerStage?: 'drop_off' | 'pick_up' | null;
+}): Promise<string> {
   try {
     if (!process.env.DEEPSEEK_API_KEY) throw new Error('No API key');
 
-    const answerText = fields
-      .filter(f => answers[f.id] !== undefined && answers[f.id] !== null)
-      .map(f => `Q: ${f.label}\nA: ${answers[f.id]}`)
-      .join('\n\n');
+    let answerText = '';
+
+    if (isVisitJourney) {
+      let dropOffFields: any[] = [];
+      let dropOffAns: Record<string, any> = {};
+      let pickUpFields: any[] = [];
+      let pickUpAns: Record<string, any> = {};
+
+      if (currentStage === 'drop_off') {
+        dropOffFields = fields.filter(f => !f.visit_stage || f.visit_stage === 'drop_off');
+        dropOffAns = answers;
+        if (partnerStage === 'pick_up' && partnerFields) {
+          pickUpFields = partnerFields.filter(f => f.visit_stage === 'pick_up');
+          pickUpAns = partnerAnswers || {};
+        }
+      } else if (currentStage === 'pick_up') {
+        pickUpFields = fields.filter(f => f.visit_stage === 'pick_up');
+        pickUpAns = answers;
+        if (partnerStage === 'drop_off' && partnerFields) {
+          dropOffFields = partnerFields.filter(f => !f.visit_stage || f.visit_stage === 'drop_off');
+          dropOffAns = partnerAnswers || {};
+        }
+      }
+
+      const dropOffText = dropOffFields
+        .filter(f => dropOffAns[f.id] !== undefined && dropOffAns[f.id] !== null)
+        .map(f => `Q: ${f.label}\nA: ${dropOffAns[f.id]}`)
+        .join('\n\n');
+
+      const pickUpText = pickUpFields
+        .filter(f => pickUpAns[f.id] !== undefined && pickUpAns[f.id] !== null)
+        .map(f => `Q: ${f.label}\nA: ${pickUpAns[f.id]}`)
+        .join('\n\n');
+
+      const sections: string[] = [];
+      if (dropOffText.trim()) {
+        sections.push(`--- Drop-off Stage ---\n${dropOffText}`);
+      }
+      if (pickUpText.trim()) {
+        sections.push(`--- Pick-up Stage ---\n${pickUpText}`);
+      }
+      answerText = sections.join('\n\n');
+    } else {
+      answerText = fields
+        .filter(f => answers[f.id] !== undefined && answers[f.id] !== null)
+        .map(f => `Q: ${f.label}\nA: ${answers[f.id]}`)
+        .join('\n\n');
+    }
 
     if (!answerText.trim()) return '';
 
@@ -87,7 +145,7 @@ export default async function SessionDetailPage({ params }: PageProps) {
     .from('responses')
     .select('*')
     .eq('session_id', id)
-    .single();
+    .maybeSingle();
 
   // Fetch form with fields
   const { data: form } = await admin
@@ -116,18 +174,49 @@ export default async function SessionDetailPage({ params }: PageProps) {
   const plateNumber = decryptPlate(session.plate_number_encrypted);
   const { plate_number_encrypted, ...sanitizedSession } = session;
 
-  // Generate AI summary server-side (only for completed sessions with answers)
-  let aiSummary = '';
-  if (session.status === 'completed' && response && Object.keys(answers).length > 0) {
-    aiSummary = await generateAiSummary(
-      answers,
-      fields,
-      facilitySettings?.ai_business_context || ''
-    );
-  }
-
   // Compute Visit Score details
   const visitScoreDetails = await computeVisitScore(id);
+  const isVisitJourney = Boolean(session.visit_stage);
+
+  let partnerResponse: any | null = null;
+  let partnerFields: any[] = [];
+  let partnerAnswers: Record<string, any> = {};
+
+  if (isVisitJourney && visitScoreDetails.partnerSession) {
+    const { data: pResp } = await admin
+      .from('responses')
+      .select('*')
+      .eq('session_id', visitScoreDetails.partnerSession.id)
+      .maybeSingle();
+
+    const { data: pForm } = await admin
+      .from('forms')
+      .select('fields')
+      .eq('id', visitScoreDetails.partnerSession.form_id)
+      .single();
+
+    partnerResponse = pResp ?? null;
+    partnerFields = Array.isArray(pForm?.fields) ? pForm.fields : [];
+    partnerAnswers = pResp?.answers || {};
+  }
+
+  // Generate AI summary server-side (only for sessions with answers)
+  let aiSummary = '';
+  const hasCurrentAnswers = response && Object.keys(answers).length > 0;
+  const hasPartnerAnswers = partnerResponse && Object.keys(partnerAnswers).length > 0;
+
+  if (hasCurrentAnswers || hasPartnerAnswers) {
+    aiSummary = await generateAiSummary({
+      answers,
+      fields,
+      businessContext: facilitySettings?.ai_business_context || '',
+      isVisitJourney,
+      currentStage: session.visit_stage,
+      partnerAnswers,
+      partnerFields,
+      partnerStage: visitScoreDetails.partnerSession?.visit_stage ?? null,
+    });
+  }
 
   const threshold = facilitySettings?.review_qr_threshold_percent ?? 90;
   const t = await getTranslations('Sessions');
@@ -149,6 +238,10 @@ export default async function SessionDetailPage({ params }: PageProps) {
         computedScore={visitScoreDetails.ownScore}
         visitScoreDetails={visitScoreDetails}
         threshold={threshold}
+        partnerResponse={partnerResponse}
+        partnerFields={partnerFields}
+        partnerAnswers={partnerAnswers}
+        isVisitJourney={isVisitJourney}
       />
     </>
   );

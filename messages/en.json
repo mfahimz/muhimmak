@@ -341,7 +341,11 @@
     "typeNumericScale": "Numeric Scale",
     "typeMultipleChoice": "Multiple Choice",
     "typeText": "Text Feedback",
-    "skippedBadge": "Skipped by customer"
+    "skippedBadge": "Skipped by customer",
+    "dropOffStage": "Drop-off Stage",
+    "pickUpStage": "Pick-up Stage",
+    "dropOffPending": "Drop-off feedback not yet submitted",
+    "pickUpPending": "Pick-up feedback not yet submitted"
   },
   "FormBuilder": {
     "visitJourneyToggle": "Visit Journey Flow",

@@ -586,7 +586,7 @@ export async function updateSession(request: Request): Promise<NextResponse> {
     }
 
     const body = await request.json();
-    const { sessionId, action, answers, deviceInfo, textScores, isPendingScoring } = body;
+    const { sessionId, action, answers, deviceInfo, textScores, isPendingScoring, interaction_metadata, lastSeenFieldId } = body;
 
     if (!sessionId || !action) {
       return NextResponse.json({ error: 'Missing sessionId or action' }, { status: 400 });
@@ -610,6 +610,45 @@ export async function updateSession(request: Request): Promise<NextResponse> {
 
     const ip = getClientIp(request);
     const now = new Date().toISOString();
+
+    if (action === 'last_seen') {
+      if (!lastSeenFieldId || typeof lastSeenFieldId !== 'string') {
+        return NextResponse.json({ error: 'Missing lastSeenFieldId' }, { status: 400 });
+      }
+
+      const { data: existingResponse } = await admin
+        .from('responses')
+        .select('id, interaction_metadata')
+        .eq('session_id', sessionId)
+        .maybeSingle();
+
+      if (existingResponse) {
+        const updatedMeta = {
+          ...(existingResponse.interaction_metadata || {}),
+          last_seen_field_id: lastSeenFieldId,
+          last_seen_at: now,
+        };
+        await admin
+          .from('responses')
+          .update({ interaction_metadata: updatedMeta })
+          .eq('id', existingResponse.id);
+      } else {
+        await admin
+          .from('responses')
+          .insert({
+            form_id: session.form_id,
+            session_id: sessionId,
+            answers: {},
+            interaction_metadata: {
+              last_seen_field_id: lastSeenFieldId,
+              last_seen_at: now,
+            },
+            submitted_at: now,
+          });
+      }
+
+      return NextResponse.json({ success: true });
+    }
 
     if (action === 'consent_given') {
       const { error: updateError } = await admin
@@ -670,21 +709,49 @@ export async function updateSession(request: Request): Promise<NextResponse> {
 
         const answersWithScores = { ...answers, _textScores: textScores || {} };
 
-        const { error: responseError } = await admin
+        const { data: existingResponse } = await admin
           .from('responses')
-          .insert({
-            form_id: session.form_id,
-            session_id: sessionId,
-            answers: answersWithScores,
-            device_info: deviceInfo || null,
-            submitted_at: now,
-            ai_text_score: aiTextScore,
-          });
+          .select('id, interaction_metadata')
+          .eq('session_id', sessionId)
+          .maybeSingle();
 
-        if (responseError) throw responseError;
+        const mergedInteractionMetadata = {
+          ...(existingResponse?.interaction_metadata || {}),
+          ...(interaction_metadata || {}),
+        };
+
+        if (existingResponse) {
+          const { error: responseError } = await admin
+            .from('responses')
+            .update({
+              form_id: session.form_id,
+              answers: answersWithScores,
+              device_info: deviceInfo || null,
+              submitted_at: now,
+              ai_text_score: aiTextScore,
+              interaction_metadata: mergedInteractionMetadata,
+            })
+            .eq('id', existingResponse.id);
+
+          if (responseError) throw responseError;
+        } else {
+          const { error: responseError } = await admin
+            .from('responses')
+            .insert({
+              form_id: session.form_id,
+              session_id: sessionId,
+              answers: answersWithScores,
+              device_info: deviceInfo || null,
+              submitted_at: now,
+              ai_text_score: aiTextScore,
+              interaction_metadata: mergedInteractionMetadata,
+            });
+
+          if (responseError) throw responseError;
+        }
 
         if (action === 'completed') {
-          if (isPendingScoring) {
+          if (isPendingScoring || session.visit_stage === 'drop_off') {
             showQr = false;
           } else {
             const { data: settings } = await admin
@@ -788,7 +855,7 @@ export async function updateSession(request: Request): Promise<NextResponse> {
 
       const threshold = settings?.review_qr_threshold_percent ?? 90;
       const reviewUrl = settings?.google_review_url;
-      const showQr = finalScore >= threshold && !!reviewUrl;
+      const showQr = session.visit_stage !== 'drop_off' && finalScore >= threshold && !!reviewUrl;
 
       return NextResponse.json({ success: true, showQr });
     }
@@ -1067,3 +1134,80 @@ export async function computeReceptionistImpact(staffId: string): Promise<Recept
     return emptyResult;
   }
 }
+
+// ---------------------------------------------------------------------------
+// trackReviewClick
+// ---------------------------------------------------------------------------
+export async function trackReviewClick(request: Request): Promise<NextResponse> {
+  try {
+    const rateLimit = checkRateLimit(request, 'track_review_click', { windowMs: 60 * 1000, max: 10 });
+    if (!rateLimit.allowed) {
+      return NextResponse.json({ error: 'Too many requests' }, { status: 429 });
+    }
+
+    const body = await request.json();
+    const { sessionId } = body;
+
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!sessionId || typeof sessionId !== 'string' || !uuidRegex.test(sessionId)) {
+      return NextResponse.json({ error: 'Invalid or missing sessionId' }, { status: 400 });
+    }
+
+    const admin = createAdminClient();
+    const now = new Date().toISOString();
+
+    const { error } = await admin
+      .from('sessions')
+      .update({
+        google_review_clicked: true,
+        google_review_clicked_at: now,
+      })
+      .eq('id', sessionId);
+
+    if (error) throw error;
+
+    return NextResponse.json({ success: true });
+  } catch (err: any) {
+    console.error('Track review click error:', err);
+    return NextResponse.json({ error: err.message || err }, { status: 500 });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// trackReviewQrShown
+// ---------------------------------------------------------------------------
+export async function trackReviewQrShown(request: Request): Promise<NextResponse> {
+  try {
+    const rateLimit = checkRateLimit(request, 'track_review_qr_shown', { windowMs: 60 * 1000, max: 10 });
+    if (!rateLimit.allowed) {
+      return NextResponse.json({ error: 'Too many requests' }, { status: 429 });
+    }
+
+    const body = await request.json();
+    const { sessionId } = body;
+
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!sessionId || typeof sessionId !== 'string' || !uuidRegex.test(sessionId)) {
+      return NextResponse.json({ error: 'Invalid or missing sessionId' }, { status: 400 });
+    }
+
+    const admin = createAdminClient();
+    const now = new Date().toISOString();
+
+    const { error } = await admin
+      .from('sessions')
+      .update({
+        google_review_qr_shown: true,
+        google_review_qr_shown_at: now,
+      })
+      .eq('id', sessionId);
+
+    if (error) throw error;
+
+    return NextResponse.json({ success: true });
+  } catch (err: any) {
+    console.error('Track review QR shown error:', err);
+    return NextResponse.json({ error: err.message || err }, { status: 500 });
+  }
+}
+

@@ -341,7 +341,11 @@
     "typeNumericScale": "مقياس رقمي",
     "typeMultipleChoice": "اختيار من متعدد",
     "typeText": "ملاحظات نصية",
-    "skippedBadge": "تخطاه العميل"
+    "skippedBadge": "تخطاه العميل",
+    "dropOffStage": "مرحلة الإيداع",
+    "pickUpStage": "مرحلة الاستلام",
+    "dropOffPending": "لم يتم تقديم ملاحظات الإيداع بعد",
+    "pickUpPending": "لم يتم تقديم ملاحظات الاستلام بعد"
   },
   "FormBuilder": {
     "visitJourneyToggle": "تدفق رحلة الزيارة",
