@@ -778,13 +778,23 @@ export async function updateSession(request: Request): Promise<NextResponse> {
               score: Math.round(finalScore),
               formName,
             });
-            await createNotification({
-              recipientRole: ['super_admin', 'ceo', 'agm', 'manager'],
-              type: 'low_satisfaction',
-              title: 'Low Satisfaction Alert',
-              message: `Low satisfaction score of ${Math.round(finalScore)}% recorded for "${formName}".`,
-              metadata: { sessionId, score: Math.round(finalScore), formName },
-            });
+
+            const { data: notifSetting } = await admin
+              .from('notification_settings')
+              .select('enabled, threshold_percent')
+              .eq('event_type', 'low_satisfaction_alert')
+              .single();
+
+            const roundedScore = Math.round(finalScore);
+            if (notifSetting?.enabled && roundedScore < (notifSetting?.threshold_percent ?? 50)) {
+              await createNotification({
+                recipientRole: ['super_admin', 'ceo', 'agm', 'manager'],
+                type: 'low_satisfaction',
+                title: 'Low Satisfaction Alert',
+                message: `Low satisfaction score of ${roundedScore}% recorded for "${formName}".`,
+                metadata: { sessionId, score: roundedScore, formName },
+              });
+            }
           }
         }
       }
