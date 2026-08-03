@@ -318,7 +318,16 @@
     "durationUnitSec": "{count}s",
     "durationUnitMin": "{count}m {sec}s",
     "durationUnitHour": "{count}h {min}m",
-    "quickStartSession": "Start Session"
+    "quickStartSession": "Start Session",
+    "skippedCardTitle": "Skipped Questions Analysis",
+    "skippedTotalLabel": "Questions Skipped",
+    "skippedOfTotal": "{skipped} of {total} questions skipped",
+    "skippedByTypeLabel": "Skipped Breakdown by Question Type",
+    "typeStarRating": "Star Rating",
+    "typeNumericScale": "Numeric Scale",
+    "typeMultipleChoice": "Multiple Choice",
+    "typeText": "Text Feedback",
+    "skippedBadge": "Skipped by customer"
   },
   "FormBuilder": {
     "visitJourneyToggle": "Visit Journey Flow",
@@ -420,6 +429,7 @@
     "progressLabel": "{percent}% Completed",
     "textPlaceholder": "Type your feedback here...",
     "nextButton": "Next",
+    "skipButton": "Skip",
     "backButton": "Back",
     "footerWatermark": "Muhimmak Feedback",
     "idleTitle": "Are you still there?",

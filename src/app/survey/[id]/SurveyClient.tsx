@@ -447,6 +447,37 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
     handleAnswer(textVal, true)
   }
 
+  const handleSkip = () => {
+    if (submitting) return
+    setTextVal("")
+    const nextVisibleFields = combinedFields.filter(f => isFieldVisible(f, answers))
+    const isLastVisible = currentFieldIdx >= nextVisibleFields.length - 1
+
+    if (!isLastVisible) {
+      setCurrentFieldIdx(prev => prev + 1)
+    } else {
+      handleSubmitSurvey(answers)
+    }
+  }
+
+  const handleNext = () => {
+    if (submitting) return
+    if (currentField?.type === "text") {
+      if (textVal.trim()) {
+        handleAnswer(textVal.trim(), true)
+      } else {
+        handleSkip()
+      }
+    } else if (currentField) {
+      const existingAnswer = answers[currentField.id]
+      if (existingAnswer !== undefined && existingAnswer !== null) {
+        handleAnswer(existingAnswer, true)
+      } else {
+        handleSkip()
+      }
+    }
+  }
+
   const handleBack = () => {
     if (currentFieldIdx > 0) {
       const prevField = visibleFields[currentFieldIdx - 1]
@@ -466,6 +497,21 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
       setWasPendingOnSubmit(true)
     }
 
+    const skippedList = visibleFields.filter(f => finalAnswers[f.id] === undefined || finalAnswers[f.id] === null)
+    const skippedByTypes: Record<string, number> = {}
+    skippedList.forEach(f => {
+      skippedByTypes[f.type] = (skippedByTypes[f.type] || 0) + 1
+    })
+
+    const payloadAnswers = {
+      ...finalAnswers,
+      _skippedSummary: {
+        count: skippedList.length,
+        byType: skippedByTypes,
+        skippedFieldIds: skippedList.map(f => f.id)
+      }
+    }
+
     try {
       const res = await fetch("/api/v1/sessions/update", {
         method: "POST",
@@ -473,7 +519,7 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
         body: JSON.stringify({
           sessionId: session.id,
           action: "completed",
-          answers: finalAnswers,
+          answers: payloadAnswers,
           textScores: textScores,
           isPendingScoring: isPending,
           deviceInfo: typeof window !== "undefined" ? window.navigator.userAgent : "kiosk_tablet",
@@ -761,7 +807,6 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
               <div className="space-y-2 text-center md:text-start">
                 <h3 className="text-xl md:text-2xl font-bold text-slate-900 dark:text-slate-100">
                   {isArabic && currentField.ar?.label ? currentField.ar.label : currentField.label}
-                  <span className="text-rose-500 ml-1">*</span>
                 </h3>
               </div>
 
@@ -873,24 +918,39 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
                       disabled={submitting}
                       className="flex w-full rounded-xl border border-slate-250 bg-transparent px-4 py-3 text-base shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 text-slate-900 dark:text-slate-100 border-slate-200 dark:border-slate-800"
                     />
-                    <div className="flex justify-end">
-                      <Button
-                        onClick={handleTextSubmit}
-                        disabled={submitting || !textVal.trim()}
-                        className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold flex items-center gap-1.5 h-11 px-6 rounded-xl shadow-xs"
-                      >
-                        {submitting ? (
-                          <RefreshCw className="size-4 animate-spin" />
-                        ) : (
-                          <>
-                            <span>{t("nextButton")}</span>
-                            <ArrowRight className="size-4" />
-                          </>
-                        )}
-                      </Button>
-                    </div>
                   </div>
                 )}
+              </div>
+
+              {/* Action Buttons: Left = Skip (light/subtle), Right = Next */}
+              <div className="flex items-center justify-between w-full pt-4 border-t border-slate-100 dark:border-slate-800 mt-2" dir="ltr">
+                {/* Left: Skip button (subtle, light design) */}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={handleSkip}
+                  disabled={submitting}
+                  className="text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300 hover:bg-slate-100/50 dark:hover:bg-slate-800/40 text-xs sm:text-sm font-normal cursor-pointer"
+                >
+                  <span>{t("skipButton")}</span>
+                </Button>
+
+                {/* Right: Next button */}
+                <Button
+                  type="button"
+                  onClick={handleNext}
+                  disabled={submitting}
+                  className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold flex items-center gap-1.5 h-11 px-6 rounded-xl shadow-xs cursor-pointer"
+                >
+                  {submitting ? (
+                    <RefreshCw className="size-4 animate-spin" />
+                  ) : (
+                    <>
+                      <span>{t("nextButton")}</span>
+                      <ArrowRight className={`size-4 ${isArabic ? 'rotate-180' : ''}`} />
+                    </>
+                  )}
+                </Button>
               </div>
             </>
           )}

@@ -21,6 +21,7 @@ import {
   LogIn,
   LogOut,
   Link2,
+  SkipForward,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -61,6 +62,27 @@ export default function SessionDetailClient({
   const t = useTranslations("Sessions");
   const tNumeric = useTranslations("NumericScale");
   const locale = useLocale();
+
+  const skippedFields = React.useMemo(() => {
+    return fields.filter(f => answers[f.id] === undefined || answers[f.id] === null);
+  }, [fields, answers]);
+
+  const skippedByTypes = React.useMemo(() => {
+    const counts: Record<string, number> = {
+      star_rating: 0,
+      numeric_scale: 0,
+      multiple_choice: 0,
+      text: 0,
+    };
+    skippedFields.forEach((f) => {
+      if (counts[f.type] !== undefined) {
+        counts[f.type] += 1;
+      } else {
+        counts[f.type] = (counts[f.type] || 0) + 1;
+      }
+    });
+    return counts;
+  }, [skippedFields]);
 
   const formatDateTime = (dateStr: string | null) => {
     if (!dateStr) return "—";
@@ -372,6 +394,67 @@ export default function SessionDetailClient({
         </Card>
       )}
 
+      {/* SECTION 4.5 — Skipped Questions Analysis Card */}
+      {session.status === "completed" && fields.length > 0 && (
+        <Card className="border border-border shadow-xs bg-card rounded-2xl overflow-hidden">
+          <CardHeader className="bg-muted/10 border-b border-border/60 pb-3">
+            <CardTitle className="text-base font-bold flex items-center justify-between text-foreground">
+              <div className="flex items-center gap-2">
+                <SkipForward className="size-4 text-slate-500" />
+                <span>{t("skippedCardTitle")}</span>
+              </div>
+              <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200/60 dark:border-slate-700">
+                {t("skippedOfTotal", {
+                  skipped: toArabicNumerals(skippedFields.length, locale),
+                  total: toArabicNumerals(fields.length, locale),
+                })}
+              </span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-6 space-y-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="p-3.5 rounded-xl bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-900/40 flex flex-col gap-1">
+                <span className="text-[11px] font-medium text-amber-700 dark:text-amber-400 flex items-center gap-1">
+                  <Star className="size-3 fill-amber-400 text-amber-400" />
+                  {t("typeStarRating")}
+                </span>
+                <span className="text-xl font-extrabold text-foreground tabular-nums">
+                  {toArabicNumerals(skippedByTypes.star_rating || 0, locale)}
+                </span>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-orange-50/50 dark:bg-orange-950/20 border border-orange-200/50 dark:border-orange-900/40 flex flex-col gap-1">
+                <span className="text-[11px] font-medium text-orange-700 dark:text-orange-400">
+                  {tNumeric("typeLabel")}
+                </span>
+                <span className="text-xl font-extrabold text-foreground tabular-nums">
+                  {toArabicNumerals(skippedByTypes.numeric_scale || 0, locale)}
+                </span>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-blue-50/50 dark:bg-blue-950/20 border border-blue-200/50 dark:border-blue-900/40 flex flex-col gap-1">
+                <span className="text-[11px] font-medium text-blue-700 dark:text-blue-400">
+                  {t("typeMultipleChoice")}
+                </span>
+                <span className="text-xl font-extrabold text-foreground tabular-nums">
+                  {toArabicNumerals(skippedByTypes.multiple_choice || 0, locale)}
+                </span>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-purple-50/50 dark:bg-purple-950/20 border border-purple-200/50 dark:border-purple-900/40 flex flex-col gap-1">
+                <span className="text-[11px] font-medium text-purple-700 dark:text-purple-400 flex items-center gap-1">
+                  <MessageSquare className="size-3" />
+                  {t("typeText")}
+                </span>
+                <span className="text-xl font-extrabold text-foreground tabular-nums">
+                  {toArabicNumerals(skippedByTypes.text || 0, locale)}
+                </span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* SECTION 5 — Answers */}
       {session.status === "completed" ? (
         <Card className="border border-border shadow-xs bg-card rounded-2xl overflow-hidden">
@@ -382,73 +465,93 @@ export default function SessionDetailClient({
             </CardTitle>
           </CardHeader>
           <CardContent className="p-6 space-y-6">
-            {fields.length === 0 || Object.keys(answers).length === 0 ? (
+            {fields.length === 0 ? (
               <p className="text-sm text-muted-foreground italic">{t("noAnswers")}</p>
             ) : (
               fields.map((field: any, idx: number) => {
                 const answer = answers[field.id];
-                if (answer === undefined || answer === null) return null;
+                const isSkipped = answer === undefined || answer === null;
 
                 return (
                   <div
                     key={field.id || idx}
-                    className="p-4 rounded-xl border border-border/70 bg-background/50 space-y-3"
+                    className={`p-4 rounded-xl border space-y-3 transition-colors ${
+                      isSkipped
+                        ? "border-dashed border-slate-200 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-900/20"
+                        : "border-border/70 bg-background/50"
+                    }`}
                   >
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                       <h4 className="text-sm font-bold text-foreground">
                         {field.label || t("questionNumber", { number: idx + 1 })}
                       </h4>
-                      <div>{getFieldTypeBadge(field.type)}</div>
+                      <div className="flex items-center gap-2">
+                        {isSkipped && (
+                          <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-200/70 dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-3 py-0.5 text-[11px] font-medium border border-slate-300/50 dark:border-slate-700">
+                            <SkipForward className="size-3 text-slate-400" />
+                            {t("skippedBadge")}
+                          </span>
+                        )}
+                        {getFieldTypeBadge(field.type)}
+                      </div>
                     </div>
 
                     {/* Answer display logic */}
                     <div className="pt-1">
-                      {field.type === "star_rating" && (
-                        <div className="flex items-center gap-2">
-                          <div className="flex items-center gap-1">
-                            {[1, 2, 3, 4, 5].map((star) => (
-                              <Star
-                                key={star}
-                                className={`size-5 ${
-                                  star <= Number(answer)
-                                    ? "fill-amber-400 text-amber-400"
-                                    : "text-slate-300 dark:text-slate-700"
-                                }`}
-                              />
-                            ))}
-                          </div>
-                          <span className="text-sm font-semibold text-foreground tabular-nums ml-2">
-                            {toArabicNumerals(answer, locale)} / {toArabicNumerals(5, locale)}
-                          </span>
-                        </div>
-                      )}
+                      {isSkipped ? (
+                        <p className="text-xs text-muted-foreground italic">
+                          Skipped by customer
+                        </p>
+                      ) : (
+                        <>
+                          {field.type === "star_rating" && (
+                            <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-1">
+                                {[1, 2, 3, 4, 5].map((star) => (
+                                  <Star
+                                    key={star}
+                                    className={`size-5 ${
+                                      star <= Number(answer)
+                                        ? "fill-amber-400 text-amber-400"
+                                        : "text-slate-300 dark:text-slate-700"
+                                    }`}
+                                  />
+                                ))}
+                              </div>
+                              <span className="text-sm font-semibold text-foreground tabular-nums ml-2">
+                                {toArabicNumerals(answer, locale)} / {toArabicNumerals(5, locale)}
+                              </span>
+                            </div>
+                          )}
 
-                      {field.type === "multiple_choice" && (
-                        <span className="inline-flex items-center rounded-lg bg-indigo-50 dark:bg-indigo-950/50 px-3 py-1 text-sm font-semibold text-indigo-700 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800">
-                          {String(answer)}
-                        </span>
-                      )}
+                          {field.type === "multiple_choice" && (
+                            <span className="inline-flex items-center rounded-lg bg-indigo-50 dark:bg-indigo-950/50 px-3 py-1 text-sm font-semibold text-indigo-700 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800">
+                              {String(answer)}
+                            </span>
+                          )}
 
-                      {field.type === "text" && (
-                        <div className="border-l-4 border-indigo-500 bg-slate-50 dark:bg-slate-900/60 p-4 rounded-r-xl italic text-sm text-slate-700 dark:text-slate-300">
-                          &ldquo;{String(answer)}&rdquo;
-                        </div>
-                      )}
+                          {field.type === "text" && (
+                            <div className="border-l-4 border-indigo-500 bg-slate-50 dark:bg-slate-900/60 p-4 rounded-r-xl italic text-sm text-slate-700 dark:text-slate-300">
+                              &ldquo;{String(answer)}&rdquo;
+                            </div>
+                          )}
 
-                      {field.type === "numeric_scale" && (
-                        <span className="text-sm font-semibold text-foreground tabular-nums">
-                          {tNumeric("displayFormat", { value: toArabicNumerals(answer, locale) })}
-                        </span>
-                      )}
+                          {field.type === "numeric_scale" && (
+                            <span className="text-sm font-semibold text-foreground tabular-nums">
+                              {tNumeric("displayFormat", { value: toArabicNumerals(answer, locale) })}
+                            </span>
+                          )}
 
-                      {field.type !== "star_rating" &&
-                        field.type !== "multiple_choice" &&
-                        field.type !== "text" &&
-                        field.type !== "numeric_scale" && (
-                          <p className="text-sm font-medium text-foreground">
-                            {String(answer)}
-                          </p>
-                        )}
+                          {field.type !== "star_rating" &&
+                            field.type !== "multiple_choice" &&
+                            field.type !== "text" &&
+                            field.type !== "numeric_scale" && (
+                              <p className="text-sm font-medium text-foreground">
+                                {String(answer)}
+                              </p>
+                            )}
+                        </>
+                      )}
                     </div>
                   </div>
                 );

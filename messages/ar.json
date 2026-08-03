@@ -318,7 +318,16 @@
     "durationUnitSec": "{count} ث",
     "durationUnitMin": "{count} د {sec} ث",
     "durationUnitHour": "{count} س {min} د",
-    "quickStartSession": "بدء الجلسة"
+    "quickStartSession": "بدء الجلسة",
+    "skippedCardTitle": "تحليل الأسئلة المتخطاة",
+    "skippedTotalLabel": "الأسئلة المتخطاة",
+    "skippedOfTotal": "تم تخطي {skipped} من أصل {total} أسئلة",
+    "skippedByTypeLabel": "تفصيل المتخطاة حسب نوع السؤال",
+    "typeStarRating": "تقييم بالنجوم",
+    "typeNumericScale": "مقياس رقمي",
+    "typeMultipleChoice": "اختيار من متعدد",
+    "typeText": "ملاحظات نصية",
+    "skippedBadge": "تم تخطيه من قبل العميل"
   },
   "FormBuilder": {
     "visitJourneyToggle": "تدفق رحلة الزيارة",
@@ -420,6 +429,7 @@
     "progressLabel": "تم إكمال {percent}%",
     "textPlaceholder": "اكتب ملاحظاتك هنا...",
     "nextButton": "التالي",
+    "skipButton": "تخطي",
     "backButton": "السابق",
     "footerWatermark": "ملاحظات مهمك",
     "idleTitle": "هل ما زلت هنا؟",
