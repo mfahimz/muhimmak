@@ -171,6 +171,30 @@ export default async function SessionsPage({ searchParams }: PageProps) {
     }
   })
 
+  // Scope summary counts (scoped by role and date filters, ignoring status filter)
+  let metricsQuery = supabase
+    .from("sessions")
+    .select("status")
+
+  if (role === "receptionist") {
+    metricsQuery = metricsQuery.eq("created_by", user.id)
+  }
+  if (from) {
+    metricsQuery = metricsQuery.gte("started_at", `${from}T00:00:00.000Z`)
+  }
+  if (to) {
+    metricsQuery = metricsQuery.lte("started_at", `${to}T23:59:59.999Z`)
+  }
+
+  const { data: metricsData } = await metricsQuery
+  const rawMetrics = metricsData || []
+  const metrics = {
+    total: rawMetrics.length,
+    completed: rawMetrics.filter((r: any) => r.status === "completed").length,
+    refused: rawMetrics.filter((r: any) => r.status === "refused").length,
+    abandoned: rawMetrics.filter((r: any) => r.status === "abandoned" || r.status === "started").length,
+  }
+
   return (
     <>
       <SiteHeader title={t("title")} />
@@ -199,6 +223,7 @@ export default async function SessionsPage({ searchParams }: PageProps) {
           currentPage={page}
           pageSize={pageSize}
           filters={{ status, from, to }}
+          metrics={metrics}
           initialTab={tab}
         />
       </div>
