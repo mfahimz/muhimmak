@@ -219,6 +219,7 @@ interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
 export function AppSidebar({ user, ...props }: AppSidebarProps) {
   const pathname = usePathname()
   const t = useTranslations("Sidebar")
+  const tLegal = useTranslations("Legal")
 
   const topItems = React.useMemo(() => {
     return TOP_NAV_ITEMS.filter((item) => item.roles.includes(user.role))
@@ -313,6 +314,15 @@ export function AppSidebar({ user, ...props }: AppSidebarProps) {
       <SidebarFooter className="border-t border-slate-200 p-2 flex flex-col gap-2">
         <LanguageToggle />
         <NavUser user={user} />
+        <div className="flex items-center justify-center gap-3 pt-1 pb-0.5 text-[11px] text-slate-400 border-t border-slate-100 dark:border-slate-800">
+          <Link href="/terms" className="hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors">
+            {tLegal("termsOfUse")}
+          </Link>
+          <span className="size-1 rounded-full bg-slate-300 dark:bg-slate-700" />
+          <Link href="/privacy" className="hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors">
+            {tLegal("privacyPolicy")}
+          </Link>
+        </div>
       </SidebarFooter>
     </Sidebar>
   )

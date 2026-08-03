@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { IBM_Plex_Sans_Arabic } from 'next/font/google';
 import { Spinner } from '@/components/ui/spinner';
 import { useTranslations } from 'next-intl';
@@ -17,6 +18,7 @@ const ibmPlexArabic = IBM_Plex_Sans_Arabic({
 export function LoginForm() {
   const router = useRouter();
   const t = useTranslations('Login');
+  const tLegal = useTranslations('Legal');
   const [name, setName] = useState('');
   const [pin, setPin] = useState('');
   const [loading, setLoading] = useState(false);
@@ -348,6 +350,17 @@ export function LoginForm() {
                 </form>
               </div>
             )}
+
+            {/* Legal Links Footer */}
+            <div className="login-legal-footer">
+              <Link href="/terms" className="legal-link">
+                {tLegal('termsOfUse')}
+              </Link>
+              <span className="legal-dot" />
+              <Link href="/privacy" className="legal-link">
+                {tLegal('privacyPolicy')}
+              </Link>
+            </div>
           </div>
         </div>
 
@@ -912,5 +925,33 @@ const loginStyles = /* css */ `
 
   @keyframes spin-slow {
     to { transform: rotate(360deg); }
+  }
+
+  .login-legal-footer {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    padding-top: 0.5rem;
+    font-size: 0.75rem;
+    color: #64748b;
+  }
+
+  .legal-link {
+    color: #94a3b8;
+    text-decoration: none;
+    transition: color 0.2s ease;
+  }
+
+  .legal-link:hover {
+    color: #818cf8;
+    text-decoration: underline;
+  }
+
+  .legal-dot {
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background-color: #475569;
   }
 `;

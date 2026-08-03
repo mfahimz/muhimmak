@@ -49,11 +49,13 @@ export default async function DynamicTokenFeedbackPage({
   const admin = createAdminClient()
 
   // 2. Fetch Facility Settings
-  const { data: settings } = await admin
+  const { data: settings, error: settingsError } = await admin
     .from("facility_settings")
     .select("default_form_id, google_review_url, review_qr_threshold_percent, display_orientation")
     .eq("id", "00000000-0000-0000-0000-000000000000")
     .single()
+
+  console.log("[feedback/[token]] facility_settings data:", settings, "error:", settingsError)
 
   const defaultFormId = settings?.default_form_id
   const googleReviewUrl = settings?.google_review_url || ""
@@ -63,11 +65,13 @@ export default async function DynamicTokenFeedbackPage({
   // 3. Fetch Form if default_form_id exists
   let form: any = null
   if (defaultFormId) {
-    const { data: formData } = await admin
+    const { data: formData, error: formError } = await admin
       .from("forms")
       .select("id, name, description, fields, status, is_visit_journey")
       .eq("id", defaultFormId)
       .single()
+
+    console.log("[feedback/[token]] forms query formData:", formData, "error:", formError)
 
     if (formData && formData.status === "active") {
       form = formData
