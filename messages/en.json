@@ -20,7 +20,11 @@
     "labelPin": "PIN",
     "ariaPinDigit": "PIN digit {digit}",
     "btnSignIn": "Sign In",
-    "staffSignIn": "Login"
+    "staffSignIn": "Login",
+    "loginSuccess": "Login Successful!",
+    "verifying": "Verifying...",
+    "redirecting": "Redirecting to dashboard...",
+    "welcome": "Welcome back, {name}!"
   },
   "Sidebar": {
     "brandTitle": "AL MARAGHI",

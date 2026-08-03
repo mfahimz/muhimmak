@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { IBM_Plex_Sans_Arabic } from 'next/font/google';
 import { Spinner } from '@/components/ui/spinner';
 import { useTranslations } from 'next-intl';
+import { Check, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 
 const ibmPlexArabic = IBM_Plex_Sans_Arabic({
   subsets: ['arabic'],
@@ -21,16 +23,19 @@ export function LoginForm() {
   const [error, setError] = useState('');
   const [mounted, setMounted] = useState(false);
   const [sessionExpiredMsg, setSessionExpiredMsg] = useState('');
+  const [isSuccess, setIsSuccess] = useState(false);
+  const [userFullName, setUserFullName] = useState('');
   const pinRefs = useRef<(HTMLInputElement | null)[]>([]);
   const isSubmitting = useRef(false);
 
   useEffect(() => {
     setMounted(true);
+    router.prefetch('/dashboard');
     const params = new URLSearchParams(window.location.search);
     if (params.get('reason') === 'session_expired') {
       setSessionExpiredMsg(t('sessionExpired'));
     }
-  }, [t]);
+  }, [router, t]);
 
   const handlePinChange = (value: string) => {
     setPin(value.replace(/\D/g, '').slice(0, 4));
@@ -129,16 +134,26 @@ export function LoginForm() {
         setError(body.error ?? t('errorGeneric'));
         setPin('');
         pinRefs.current[0]?.focus();
+        setLoading(false);
+        isSubmitting.current = false;
         return;
       }
 
+      const fullName = body.profile?.fullName || currentName;
+      setUserFullName(fullName);
+      setIsSuccess(true);
+
+      toast.success(t('loginSuccess'), {
+        description: t('redirecting'),
+      });
+
       router.push('/dashboard');
       router.refresh();
+      // Keep loading and isSubmitting true so interface stays in transition screen
     } catch {
       setError(t('errorNetwork'));
       setPin('');
       pinRefs.current[0]?.focus();
-    } finally {
       setLoading(false);
       isSubmitting.current = false;
     }
@@ -222,87 +237,117 @@ export function LoginForm() {
               </div>
             )}
 
-            {/* Form Card */}
-            <div className="form-card">
-              <div className="form-header">
-                <h2 className="form-title">{t('staffSignIn')}</h2>
+            {/* Form Card or Success Transition */}
+            {isSuccess ? (
+              <div className="form-card success-transition-card">
+                <div className="success-icon-wrapper">
+                  <div className="success-glow-ring" />
+                  <div className="success-circle">
+                    <Check className="success-check-icon" />
+                  </div>
+                </div>
+
+                <div className="success-content">
+                  <h2 className="success-title">{t('loginSuccess')}</h2>
+                  <p className="success-welcome">
+                    {t('welcome', { name: userFullName || name })}
+                  </p>
+                </div>
+
+                <div className="success-redirect-badge">
+                  <Loader2 className="animate-spin size-4 text-indigo-400" />
+                  <span>{t('redirecting')}</span>
+                </div>
+
+                <div className="success-progress-track">
+                  <div className="success-progress-bar" />
+                </div>
               </div>
-
-              <form onSubmit={handleLogin} className="form-element" autoComplete="off">
-                
-                {/* Name Input */}
-                <div className="form-group">
-                  <label htmlFor="login-name" className="form-label">
-                    {t('labelYourName')}
-                  </label>
-                  <div className="form-input-wrapper">
-                    <input
-                      id="login-name"
-                      type="text"
-                      autoComplete="off"
-                      placeholder={t('placeholderEnterName')}
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      className="form-input"
-                      required
-                      disabled={loading}
-                    />
-                  </div>
+            ) : (
+              <div className="form-card">
+                <div className="form-header">
+                  <h2 className="form-title">{t('staffSignIn')}</h2>
                 </div>
 
-                {/* PIN Input */}
-                <div className="form-group">
-                  <label className="form-label" id="pin-label">
-                    {t('labelPin')}
-                  </label>
+                <form onSubmit={handleLogin} className="form-element" autoComplete="off">
                   
-                  <div
-                    className="pin-dots-container"
-                    role="group"
-                    aria-labelledby="pin-label"
-                  >
-                    {[0, 1, 2, 3].map((i) => (
-                      <div
-                        key={i}
-                        className={`pin-dot-wrapper ${pin[i] ? 'filled' : ''}`}
-                      >
-                        <input
-                          ref={(el) => { pinRefs.current[i] = el; }}
-                          id={`login-pin-${i}`}
-                          type="password"
-                          inputMode="numeric"
-                          autoComplete="off"
-                          maxLength={1}
-                          aria-label={t('ariaPinDigit', { digit: i + 1 })}
-                          value={pin[i] ?? ''}
-                          onChange={(e) => handlePinDigit(i, e.target.value)}
-                          onKeyDown={(e) => handlePinKeyDown(i, e)}
-                          onPaste={i === 0 ? handlePinPaste : undefined}
-                          className="pin-hidden-input"
-                          required={i === 0}
-                          disabled={loading}
-                        />
-                        <div className="pin-dot-visual" />
-                      </div>
-                    ))}
+                  {/* Name Input */}
+                  <div className="form-group">
+                    <label htmlFor="login-name" className="form-label">
+                      {t('labelYourName')}
+                    </label>
+                    <div className="form-input-wrapper">
+                      <input
+                        id="login-name"
+                        type="text"
+                        autoComplete="off"
+                        placeholder={t('placeholderEnterName')}
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        className="form-input"
+                        required
+                        disabled={loading}
+                      />
+                    </div>
                   </div>
-                </div>
 
-                {/* Submit Button */}
-                <button
-                  type="submit"
-                  className="form-submit-btn"
-                  disabled={loading}
-                >
-                  {loading ? (
-                    <Spinner size="md" />
-                  ) : (
-                    <span className="submit-btn-text">{t('btnSignIn')}</span>
-                  )}
-                </button>
+                  {/* PIN Input */}
+                  <div className="form-group">
+                    <label className="form-label" id="pin-label">
+                      {t('labelPin')}
+                    </label>
+                    
+                    <div
+                      className="pin-dots-container"
+                      role="group"
+                      aria-labelledby="pin-label"
+                    >
+                      {[0, 1, 2, 3].map((i) => (
+                        <div
+                          key={i}
+                          className={`pin-dot-wrapper ${pin[i] ? 'filled' : ''}`}
+                        >
+                          <input
+                            ref={(el) => { pinRefs.current[i] = el; }}
+                            id={`login-pin-${i}`}
+                            type="password"
+                            inputMode="numeric"
+                            autoComplete="off"
+                            maxLength={1}
+                            aria-label={t('ariaPinDigit', { digit: i + 1 })}
+                            value={pin[i] ?? ''}
+                            onChange={(e) => handlePinDigit(i, e.target.value)}
+                            onKeyDown={(e) => handlePinKeyDown(i, e)}
+                            onPaste={i === 0 ? handlePinPaste : undefined}
+                            className="pin-hidden-input"
+                            required={i === 0}
+                            disabled={loading}
+                          />
+                          <div className="pin-dot-visual" />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
 
-              </form>
-            </div>
+                  {/* Submit Button */}
+                  <button
+                    type="submit"
+                    className="form-submit-btn"
+                    disabled={loading}
+                  >
+                    {loading ? (
+                      <div className="flex items-center justify-center gap-2">
+                        <Spinner size="sm" />
+                        <span>{t('verifying')}</span>
+                      </div>
+                    ) : (
+                      <span className="submit-btn-text">{t('btnSignIn')}</span>
+                    )}
+                  </button>
+
+                </form>
+              </div>
+            )}
           </div>
         </div>
 
@@ -754,6 +799,115 @@ const loginStyles = /* css */ `
     font-size: 0.75rem;
     color: #9ca3af;
     margin-top: 0.5rem;
+  }
+
+  /* Success Transition Screen */
+  .success-transition-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: 2.75rem 2rem;
+    gap: 1.25rem;
+    animation: fadeInScale 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+
+  .success-icon-wrapper {
+    position: relative;
+    width: 76px;
+    height: 76px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .success-glow-ring {
+    position: absolute;
+    inset: -6px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(16, 185, 129, 0.25) 0%, rgba(99, 102, 241, 0.15) 70%, transparent 100%);
+    border: 1px dashed rgba(16, 185, 129, 0.4);
+    animation: spin-slow 10s linear infinite;
+  }
+
+  .success-circle {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    box-shadow: 0 0 25px rgba(16, 185, 129, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
+  }
+
+  .success-check-icon {
+    width: 32px;
+    height: 32px;
+    color: #ffffff;
+    stroke-width: 2.5;
+  }
+
+  .success-content {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  .success-title {
+    font-size: 1.35rem;
+    font-weight: 700;
+    color: #f8fafc;
+    margin: 0;
+  }
+
+  .success-welcome {
+    font-size: 0.9rem;
+    color: #9ca3af;
+    margin: 0;
+  }
+
+  .success-redirect-badge {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    border-radius: 9999px;
+    background: rgba(99, 102, 241, 0.12);
+    border: 1px solid rgba(99, 102, 241, 0.3);
+    color: #818cf8;
+    font-size: 0.825rem;
+    font-weight: 500;
+    margin-top: 0.25rem;
+  }
+
+  .success-progress-track {
+    width: 100%;
+    height: 4px;
+    background-color: #1f2937;
+    border-radius: 9999px;
+    overflow: hidden;
+    margin-top: 0.5rem;
+  }
+
+  .success-progress-bar {
+    height: 100%;
+    width: 100%;
+    background: linear-gradient(90deg, #6366f1 0%, #10b981 100%);
+    animation: progressIndeterminate 1.5s ease-in-out infinite;
+    transform-origin: left;
+  }
+
+  @keyframes progressIndeterminate {
+    0% { transform: scaleX(0); }
+    50% { transform: scaleX(0.7); }
+    100% { transform: scaleX(1); }
+  }
+
+  @keyframes fadeInScale {
+    0% { opacity: 0; transform: scale(0.95); }
+    100% { opacity: 1; transform: scale(1); }
   }
 
   @keyframes spin-slow {
