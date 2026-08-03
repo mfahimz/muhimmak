@@ -54,11 +54,20 @@ export default async function SettingsPage() {
     display_orientation: "fit_to_width",
   }
 
-  // Fetch notification settings from database
+  // Fetch all 5 notification settings from database
   const { data: notificationSettings } = await admin
     .from("notification_settings")
     .select("*")
     .order("event_type")
+
+  // Fetch all active profiles for notification recipient selection
+  const { data: availableUsersData } = await admin
+    .from("profiles")
+    .select("id, full_name, role, notification_email")
+    .eq("is_active", true)
+    .order("full_name", { ascending: true })
+
+  const availableUsers = availableUsersData || []
 
   // Fetch all active forms for the default form dropdown
   const { data: activeFormsData } = await supabase
@@ -84,6 +93,8 @@ export default async function SettingsPage() {
             initialFormTypes={formTypes}
             initialFacilitySettings={facilitySettings}
             initialNotificationSettings={notificationSettings ?? []}
+            availableUsers={availableUsers}
+            userRole={role}
             activeForms={activeForms}
           />
         </div>

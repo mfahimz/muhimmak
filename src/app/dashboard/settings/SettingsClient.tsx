@@ -111,11 +111,20 @@ export interface FacilitySettings {
   display_orientation?: 'fit_to_width' | 'fit_to_screen' | string
 }
 
+export interface AvailableUser {
+  id: string
+  full_name: string
+  role: string
+  notification_email: string | null
+}
+
 interface SettingsClientProps {
   initialFormTypes: FormType[]
   initialFacilitySettings: FacilitySettings
   initialNotificationSettings: NotificationSetting[]
   activeForms: { id: string; name: string }[]
+  availableUsers?: AvailableUser[]
+  userRole?: string
 }
 
 export function SettingsClient({
@@ -123,6 +132,8 @@ export function SettingsClient({
   initialFacilitySettings,
   initialNotificationSettings,
   activeForms,
+  availableUsers = [],
+  userRole = "super_admin",
 }: SettingsClientProps) {
   const t = useTranslations("Settings")
   const [formTypes, setFormTypes] = React.useState<FormType[]>(initialFormTypes)
@@ -172,7 +183,8 @@ export function SettingsClient({
   const [notifSaving, setNotifSaving] = React.useState<string | null>(null)
   const [notifError, setNotifError] = React.useState<string | null>(null)
   const [notifSuccess, setNotifSuccess] = React.useState<string | null>(null)
-  const [recipientsInput, setRecipientsInput] = React.useState<Record<string, string>>({})
+
+  const canEditNotifications = ["super_admin", "ceo"].includes(userRole)
 
   async function saveNotifSetting(updated: NotificationSetting) {
     setNotifSaving(updated.event_type)
@@ -180,9 +192,14 @@ export function SettingsClient({
     setNotifSuccess(null)
     try {
       const res = await fetch("/api/v1/notifications/settings", {
-        method: "PATCH",
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(updated),
+        body: JSON.stringify({
+          event_type: updated.event_type,
+          enabled: updated.enabled,
+          recipient_profile_ids: updated.recipient_profile_ids || [],
+          threshold_percent: updated.threshold_percent ?? null,
+        }),
       })
       if (!res.ok) throw new Error("Failed to save")
       setNotifSettings((prev) => {
@@ -208,7 +225,7 @@ export function SettingsClient({
       id: "",
       event_type: event,
       enabled: false,
-      recipients: [],
+      recipient_profile_ids: [],
       threshold_percent: event === "low_satisfaction_alert" ? 80 : null,
     }
   }
@@ -224,19 +241,20 @@ export function SettingsClient({
     })
   }
 
+  function toggleNotifRecipient(event: NotificationEvent, profileId: string) {
+    if (!canEditNotifications) return
+    const current = getNotifSetting(event)
+    const currentIds = current.recipient_profile_ids || []
+    const exists = currentIds.includes(profileId)
+    const nextIds = exists
+      ? currentIds.filter((id) => id !== profileId)
+      : [...currentIds, profileId]
+    updateNotifSettingState(event, { recipient_profile_ids: nextIds })
+  }
+
   function handleSaveCard(event: NotificationEvent) {
     const current = getNotifSetting(event)
-    const rawRecipientsText = recipientsInput[event]
-    const recipientsArray =
-      rawRecipientsText !== undefined
-        ? rawRecipientsText.split(",").map((e) => e.trim()).filter(Boolean)
-        : current.recipients || []
-
-    const updated: NotificationSetting = {
-      ...current,
-      recipients: recipientsArray,
-    }
-    saveNotifSetting(updated)
+    saveNotifSetting(current)
   }
 
   // Handle input changes
@@ -772,113 +790,221 @@ export function SettingsClient({
             </CardHeader>
 
             <CardContent className="p-6 pt-0 space-y-6">
-              {/* 3 Notification Cards */}
+              {!canEditNotifications && (
+                <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 text-amber-800 dark:text-amber-300 rounded-xl p-4 flex items-center gap-3 text-xs font-medium">
+                  <AlertTriangle className="size-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                  <span>Notification settings can only be edited by Super Admin or CEO roles.</span>
+                </div>
+              )}
+
+              {/* 5 Notification Cards */}
               <div className="space-y-6">
-                {(["low_satisfaction_alert", "daily_summary", "weekly_summary"] as const).map(
-                  (event) => {
-                    const setting = getNotifSetting(event)
-                    const isLowSat = event === "low_satisfaction_alert"
+                {(
+                  [
+                    {
+                      event: "low_satisfaction_alert",
+                      titleKey: "notifLowSatTitle",
+                      descKey: "notifLowSatDesc",
+                      defaultTitle: "Low Satisfaction Alert",
+                      defaultDesc: "Sent when a session scores below the threshold",
+                    },
+                    {
+                      event: "daily_summary",
+                      titleKey: "notifDailySummaryTitle",
+                      descKey: "notifDailySummaryDesc",
+                      defaultTitle: "Daily Summary",
+                      defaultDesc: "Sent every morning with yesterday session stats",
+                    },
+                    {
+                      event: "weekly_summary",
+                      titleKey: "notifWeeklySummaryTitle",
+                      descKey: "notifWeeklySummaryDesc",
+                      defaultTitle: "Weekly Summary",
+                      defaultDesc: "Sent every Monday with last week stats",
+                    },
+                    {
+                      event: "daily_qr",
+                      titleKey: "notifDailyQrTitle",
+                      descKey: "notifDailyQrDesc",
+                      defaultTitle: "Daily QR Code",
+                      defaultDesc: "Sent each morning with the day feedback QR code",
+                    },
+                    {
+                      event: "qr_manual_reset",
+                      titleKey: "notifQrResetTitle",
+                      descKey: "notifQrResetDesc",
+                      defaultTitle: "QR Manual Reset",
+                      defaultDesc: "Sent when an admin manually resets the QR code",
+                    },
+                  ] as const
+                ).map(({ event, titleKey, descKey, defaultTitle, defaultDesc }) => {
+                  const setting = getNotifSetting(event)
+                  const isLowSat = event === "low_satisfaction_alert"
+                  const selectedUserIds = setting.recipient_profile_ids || []
 
-                    const titleKey =
-                      event === "low_satisfaction_alert"
-                        ? "notifLowSatTitle"
-                        : event === "daily_summary"
-                        ? "notifDailySummaryTitle"
-                        : "notifWeeklySummaryTitle"
+                  const isSavingThis = notifSaving === event
+                  const isSuccessThis = notifSuccess === event
+                  const isErrorThis = notifError === event
 
-                    const descKey =
-                      event === "low_satisfaction_alert"
-                        ? "notifLowSatDesc"
-                        : event === "daily_summary"
-                        ? "notifDailySummaryDesc"
-                        : "notifWeeklySummaryDesc"
-
-                    const rawRecipientsText =
-                      recipientsInput[event] !== undefined
-                        ? recipientsInput[event]
-                        : (setting.recipients || []).join(", ")
-
-                    const isSavingThis = notifSaving === event
-                    const isSuccessThis = notifSuccess === event
-                    const isErrorThis = notifError === event
-
-                    return (
-                      <Card key={event} className="border border-slate-200 dark:border-slate-800 shadow-2xs">
-                        <CardHeader className="p-5 pb-3">
-                          <div className="flex items-start justify-between gap-4">
-                            <div>
-                              <CardTitle className="text-base font-bold text-slate-900 dark:text-slate-100">
-                                {t(titleKey)}
-                              </CardTitle>
-                              <CardDescription className="text-xs text-muted-foreground mt-1">
-                                {t(descKey)}
-                              </CardDescription>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs font-semibold text-slate-500">
-                                {setting.enabled ? t("notifEnabled") : t("notifDisabled")}
-                              </span>
-                              <Switch
-                                id={`switch-${event}`}
-                                checked={setting.enabled}
-                                onCheckedChange={(checked) =>
-                                  updateNotifSettingState(event, { enabled: checked })
-                                }
-                              />
-                            </div>
+                  return (
+                    <Card key={event} className="border border-slate-200 dark:border-slate-800 shadow-2xs">
+                      <CardHeader className="p-5 pb-3">
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <CardTitle className="text-base font-bold text-slate-900 dark:text-slate-100">
+                              {t(titleKey) || defaultTitle}
+                            </CardTitle>
+                            <CardDescription className="text-xs text-muted-foreground mt-1">
+                              {t(descKey) || defaultDesc}
+                            </CardDescription>
                           </div>
-                        </CardHeader>
-
-                        <CardContent className="p-5 pt-0 space-y-4">
-                          {/* Recipients text input */}
-                          <div className="space-y-1.5">
-                            <Label htmlFor={`recipients-${event}`} className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                              {t("notifRecipientsLabel")}
-                            </Label>
-                            <Input
-                              id={`recipients-${event}`}
-                              type="text"
-                              value={rawRecipientsText}
-                              onChange={(e) =>
-                                setRecipientsInput((prev) => ({
-                                  ...prev,
-                                  [event]: e.target.value,
-                                }))
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-semibold text-slate-500">
+                              {setting.enabled ? t("notifEnabled") : t("notifDisabled")}
+                            </span>
+                            <Switch
+                              id={`switch-${event}`}
+                              checked={setting.enabled}
+                              disabled={!canEditNotifications}
+                              onCheckedChange={(checked) =>
+                                updateNotifSettingState(event, { enabled: checked })
                               }
-                              placeholder={t("notifRecipientsPlaceholder")}
-                              className="h-9 text-xs border-slate-200 focus-visible:ring-indigo-500 text-slate-900 dark:text-slate-100"
                             />
                           </div>
+                        </div>
+                      </CardHeader>
 
-                          {/* Threshold number input for low_satisfaction_alert only */}
-                          {isLowSat && (
-                            <div className="space-y-1.5">
-                              <Label htmlFor="threshold-percent" className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                                {t("notifThresholdLabel")}
-                              </Label>
-                              <div className="flex items-center gap-2 max-w-[180px]">
-                                <Input
-                                  id="threshold-percent"
-                                  type="number"
-                                  min={0}
-                                  max={100}
-                                  value={setting.threshold_percent ?? 80}
-                                  onChange={(e) =>
-                                    updateNotifSettingState(event, {
-                                      threshold_percent: parseInt(e.target.value) || 0,
-                                    })
-                                  }
-                                  className="h-9 text-xs border-slate-200 focus-visible:ring-indigo-500 text-slate-900 dark:text-slate-100 text-center"
-                                />
-                                <span className="text-xs text-slate-500 font-medium">%</span>
+                      <CardContent className="p-5 pt-0 space-y-4">
+                        {/* Recipient Picker */}
+                        <div className="space-y-2">
+                          <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                            {t("notifRecipientsLabel")}
+                          </Label>
+
+                          {/* Selected User Chips */}
+                          <div className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30 min-h-[44px]">
+                            {selectedUserIds.length === 0 ? (
+                              <span className="text-xs text-slate-400 italic">
+                                {t("notifNoRecipients") || "No recipients selected"}
+                              </span>
+                            ) : (
+                              <div className="flex flex-wrap gap-1.5">
+                                {selectedUserIds.map((userId) => {
+                                  const u = availableUsers.find((user) => user.id === userId)
+                                  if (!u) return null
+                                  return (
+                                    <span
+                                      key={userId}
+                                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800"
+                                    >
+                                      <span>{u.full_name}</span>
+                                      <Badge className="text-[10px] px-1 py-0 bg-indigo-100 dark:bg-indigo-900 text-indigo-800 dark:text-indigo-200 border-none font-medium">
+                                        {u.role}
+                                      </Badge>
+                                      {canEditNotifications && (
+                                        <button
+                                          type="button"
+                                          onClick={() => toggleNotifRecipient(event, userId)}
+                                          className="hover:text-rose-600 focus:outline-hidden font-bold leading-none ms-0.5"
+                                        >
+                                          &times;
+                                        </button>
+                                      )}
+                                    </span>
+                                  )
+                                })}
                               </div>
-                              <p className="text-[11px] text-muted-foreground">
-                                {t("notifThresholdDesc")}
+                            )}
+                          </div>
+
+                          {/* Available User Picker List */}
+                          {canEditNotifications && availableUsers.length > 0 && (
+                            <div className="space-y-1 pt-1">
+                              <p className="text-[11px] font-medium text-slate-500">
+                                Click user to toggle as recipient:
                               </p>
+                              <div className="flex flex-wrap gap-1.5">
+                                {availableUsers.map((user) => {
+                                  const isSelected = selectedUserIds.includes(user.id)
+                                  const hasEmail = Boolean(user.notification_email && user.notification_email.trim())
+
+                                  if (!hasEmail) {
+                                    return (
+                                      <div
+                                        key={user.id}
+                                        title={t("notifNoEmailWarning") || "No notification email set"}
+                                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-amber-50/50 dark:bg-amber-950/20 text-amber-700/60 dark:text-amber-400/60 border border-amber-200/60 dark:border-amber-900/40 cursor-not-allowed opacity-75 select-none"
+                                      >
+                                        <AlertTriangle className="size-3 text-amber-500 shrink-0" />
+                                        <span>{user.full_name}</span>
+                                        <Badge className="text-[10px] px-1 py-0 bg-amber-100/50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border-none font-normal">
+                                          {user.role}
+                                        </Badge>
+                                      </div>
+                                    )
+                                  }
+
+                                  return (
+                                    <button
+                                      key={user.id}
+                                      type="button"
+                                      onClick={() => toggleNotifRecipient(event, user.id)}
+                                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all border cursor-pointer select-none ${
+                                        isSelected
+                                          ? "bg-indigo-600 text-white border-indigo-600 shadow-xs"
+                                          : "bg-card text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-900"
+                                      }`}
+                                    >
+                                      {isSelected ? <Check className="size-3 shrink-0" /> : <Plus className="size-3 shrink-0" />}
+                                      <span>{user.full_name}</span>
+                                      <Badge
+                                        className={`text-[10px] px-1 py-0 border-none font-normal ${
+                                          isSelected
+                                            ? "bg-indigo-700 text-indigo-100"
+                                            : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400"
+                                        }`}
+                                      >
+                                        {user.role}
+                                      </Badge>
+                                    </button>
+                                  )
+                                })}
+                              </div>
                             </div>
                           )}
+                        </div>
 
-                          {/* Save Action & Feedback per card */}
+                        {/* Threshold number input for low_satisfaction_alert only */}
+                        {isLowSat && (
+                          <div className="space-y-1.5">
+                            <Label htmlFor="threshold-percent" className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                              {t("notifThresholdLabel")}
+                            </Label>
+                            <div className="flex items-center gap-2 max-w-[180px]">
+                              <Input
+                                id="threshold-percent"
+                                type="number"
+                                min={0}
+                                max={100}
+                                disabled={!canEditNotifications}
+                                value={setting.threshold_percent ?? 80}
+                                onChange={(e) =>
+                                  updateNotifSettingState(event, {
+                                    threshold_percent: parseInt(e.target.value) || 0,
+                                  })
+                                }
+                                className="h-9 text-xs border-slate-200 focus-visible:ring-indigo-500 text-slate-900 dark:text-slate-100 text-center"
+                              />
+                              <span className="text-xs text-slate-500 font-medium">%</span>
+                            </div>
+                            <p className="text-[11px] text-muted-foreground">
+                              {t("notifThresholdDesc")}
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Save Action & Feedback per card */}
+                        {canEditNotifications && (
                           <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800/60">
                             <div className="text-xs font-medium">
                               {isSuccessThis && (
@@ -910,11 +1036,11 @@ export function SettingsClient({
                               )}
                             </Button>
                           </div>
-                        </CardContent>
-                      </Card>
-                    )
-                  }
-                )}
+                        )}
+                      </CardContent>
+                    </Card>
+                  )
+                })}
               </div>
             </CardContent>
           </Card>

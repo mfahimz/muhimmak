@@ -69,14 +69,18 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
   } | null>(null);
   const [hasCopiedPin, setHasCopiedPin] = React.useState(false);
 
+  const EMAIL_REGEX = /^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$/;
+
   // Form states
   const [createName, setCreateName] = React.useState("");
   const [createRole, setCreateRole] = React.useState<string>("receptionist");
   const [createNotificationEmail, setCreateNotificationEmail] = React.useState("");
+  const [createEmailError, setCreateEmailError] = React.useState<string | null>(null);
 
   const [editName, setEditName] = React.useState("");
   const [editRole, setEditRole] = React.useState<string>("receptionist");
   const [editNotificationEmail, setEditNotificationEmail] = React.useState("");
+  const [editEmailError, setEditEmailError] = React.useState<string | null>(null);
 
   const [customPin, setCustomPin] = React.useState("");
 
@@ -125,6 +129,14 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
       return;
     }
 
+    if (createNotificationEmail.trim()) {
+      if (!EMAIL_REGEX.test(createNotificationEmail.trim())) {
+        setCreateEmailError("Please enter a valid email address");
+        return;
+      }
+    }
+    setCreateEmailError(null);
+
     setIsSubmitting(true);
     try {
       const res = await fetch("/api/v1/users", {
@@ -147,6 +159,7 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
       setCreateName("");
       setCreateRole("receptionist");
       setCreateNotificationEmail("");
+      setCreateEmailError(null);
 
       toast.success(t("userCreatedSuccess"));
 
@@ -172,6 +185,7 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
     setEditName(user.full_name);
     setEditRole(user.role);
     setEditNotificationEmail(user.notification_email || "");
+    setEditEmailError(null);
   };
 
   const handleEditSubmit = async (e: React.FormEvent) => {
@@ -181,6 +195,14 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
       toast.error(t("errorNameRequired"));
       return;
     }
+
+    if (editNotificationEmail.trim()) {
+      if (!EMAIL_REGEX.test(editNotificationEmail.trim())) {
+        setEditEmailError("Please enter a valid email address");
+        return;
+      }
+    }
+    setEditEmailError(null);
 
     setIsSubmitting(true);
     try {
@@ -203,6 +225,7 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
         prev.map((u) => (u.id === editingUser.id ? data.user : u))
       );
       setEditingUser(null);
+      setEditEmailError(null);
       toast.success(t("userUpdatedSuccess"));
     } catch (err: any) {
       toast.error(err.message || t("errorUpdate"));
@@ -552,10 +575,20 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
                   id="create-notification-email"
                   type="email"
                   value={createNotificationEmail}
-                  onChange={(e) => setCreateNotificationEmail(e.target.value)}
+                  onChange={(e) => {
+                    setCreateNotificationEmail(e.target.value);
+                    if (createEmailError) setCreateEmailError(null);
+                  }}
                   placeholder="e.g. staff@example.com"
-                  className="h-10 text-sm border-slate-200 focus-visible:ring-indigo-500"
+                  className={`h-10 text-sm border-slate-200 focus-visible:ring-indigo-500 ${
+                    createEmailError ? "border-rose-500 focus-visible:ring-rose-500" : ""
+                  }`}
                 />
+                {createEmailError && (
+                  <p className="text-xs text-rose-500 font-medium mt-1">
+                    {createEmailError}
+                  </p>
+                )}
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-border">
@@ -656,10 +689,20 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
                   id="edit-notification-email"
                   type="email"
                   value={editNotificationEmail}
-                  onChange={(e) => setEditNotificationEmail(e.target.value)}
+                  onChange={(e) => {
+                    setEditNotificationEmail(e.target.value);
+                    if (editEmailError) setEditEmailError(null);
+                  }}
                   placeholder="e.g. staff@example.com"
-                  className="h-10 text-sm border-slate-200 focus-visible:ring-indigo-500"
+                  className={`h-10 text-sm border-slate-200 focus-visible:ring-indigo-500 ${
+                    editEmailError ? "border-rose-500 focus-visible:ring-rose-500" : ""
+                  }`}
                 />
+                {editEmailError && (
+                  <p className="text-xs text-rose-500 font-medium mt-1">
+                    {editEmailError}
+                  </p>
+                )}
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-border">

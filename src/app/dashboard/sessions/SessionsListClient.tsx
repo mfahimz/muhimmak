@@ -23,6 +23,7 @@ import {
   X,
   ChevronRight,
   FileText,
+  Lock,
 } from "lucide-react"
 import { PendingClosuresClient, type PendingClosureItem } from "../pending-closures/PendingClosuresClient"
 
@@ -784,8 +785,16 @@ export function SessionsListClient({
                       return (
                         <tr
                           key={session.id}
-                          onClick={() => router.push(`/dashboard/sessions/${session.id}`)}
-                          className="hover:bg-slate-50/80 dark:hover:bg-slate-900/40 transition-colors duration-150 cursor-pointer group"
+                          onClick={() => {
+                            if (role !== "receptionist") {
+                              router.push(`/dashboard/sessions/${session.id}`)
+                            }
+                          }}
+                          className={`transition-colors duration-150 ${
+                            role === "receptionist"
+                              ? "hover:bg-slate-50/50 dark:hover:bg-slate-900/20 cursor-default"
+                              : "hover:bg-slate-50/80 dark:hover:bg-slate-900/40 cursor-pointer group"
+                          }`}
                         >
                           {/* Form Name */}
                           <td className="px-6 py-4 text-start">
@@ -794,7 +803,7 @@ export function SessionsListClient({
                                 <FileText className="size-4" />
                               </div>
                               <div>
-                                <span className="font-bold text-foreground group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors block">
+                                <span className={`font-bold text-foreground transition-colors block ${role !== "receptionist" ? "group-hover:text-indigo-600 dark:group-hover:text-indigo-400" : ""}`}>
                                   {formName}
                                 </span>
                                 <span className="text-[10px] text-muted-foreground font-mono">
@@ -848,18 +857,25 @@ export function SessionsListClient({
 
                           {/* Explicit View Details Action */}
                           <td className="px-6 py-4 text-end whitespace-nowrap">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                router.push(`/dashboard/sessions/${session.id}`)
-                              }}
-                              className="h-8 px-3 text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 rounded-xl group-hover:translate-x-0.5 transition-all gap-1"
-                            >
-                              <span>{t("btnViewDetails")}</span>
-                              <ChevronRight className="size-3.5" />
-                            </Button>
+                            {role === "receptionist" ? (
+                              <span className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground/60 select-none">
+                                <Lock className="size-3.5" />
+                                <span>{t("btnViewDetails")}</span>
+                              </span>
+                            ) : (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  router.push(`/dashboard/sessions/${session.id}`)
+                                }}
+                                className="h-8 px-3 text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 rounded-xl group-hover:translate-x-0.5 transition-all gap-1"
+                              >
+                                <span>{t("btnViewDetails")}</span>
+                                <ChevronRight className="size-3.5" />
+                              </Button>
+                            )}
                           </td>
                         </tr>
                       )

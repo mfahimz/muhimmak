@@ -8,6 +8,24 @@ import {
   weeklySummaryEmail,
 } from '@/server/lib/email-templates';
 
+async function resolveRecipientEmails(recipientProfileIds: string[]): Promise<string[]> {
+  if (!recipientProfileIds || recipientProfileIds.length === 0) return [];
+
+  const admin = createAdminClient();
+  const { data: profiles } = await admin
+    .from('profiles')
+    .select('notification_email')
+    .in('id', recipientProfileIds)
+    .eq('is_active', true)
+    .not('notification_email', 'is', null);
+
+  if (!profiles || profiles.length === 0) return [];
+
+  return profiles
+    .map((p) => p.notification_email?.trim())
+    .filter((email): email is string => Boolean(email && email.includes('@')));
+}
+
 async function generateEmailNarrative(
   type: 'low_satisfaction_alert' | 'daily_summary' | 'weekly_summary',
   data: Record<string, any>
@@ -59,13 +77,16 @@ export async function sendLowSatisfactionAlert(data: {
 
     const { data: notifSetting } = await admin
       .from('notification_settings')
-      .select('enabled, recipients, threshold_percent')
+      .select('enabled, recipient_profile_ids, threshold_percent')
       .eq('event_type', 'low_satisfaction_alert')
       .single();
 
     if (!notifSetting?.enabled) return;
-    if (!notifSetting.recipients?.length) return;
+    if (!notifSetting.recipient_profile_ids?.length) return;
     if (data.score >= (notifSetting.threshold_percent ?? 50)) return;
+
+    const recipientEmails = await resolveRecipientEmails(notifSetting.recipient_profile_ids);
+    if (!recipientEmails.length) return;
 
     const narrativeHtml = await generateEmailNarrative('low_satisfaction_alert', {
       score: data.score,
@@ -90,7 +111,7 @@ export async function sendLowSatisfactionAlert(data: {
 
     await resend.emails.send({
       from: RESEND_FROM,
-      to: notifSetting.recipients,
+      to: recipientEmails,
       subject,
       html,
     });
@@ -109,12 +130,15 @@ export async function sendDailySummary(): Promise<void> {
 
     const { data: notifSetting } = await admin
       .from('notification_settings')
-      .select('enabled, recipients')
+      .select('enabled, recipient_profile_ids')
       .eq('event_type', 'daily_summary')
       .single();
 
     if (!notifSetting?.enabled) return;
-    if (!notifSetting.recipients?.length) return;
+    if (!notifSetting.recipient_profile_ids?.length) return;
+
+    const recipientEmails = await resolveRecipientEmails(notifSetting.recipient_profile_ids);
+    if (!recipientEmails.length) return;
 
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
@@ -178,7 +202,7 @@ export async function sendDailySummary(): Promise<void> {
 
     await resend.emails.send({
       from: RESEND_FROM,
-      to: notifSetting.recipients,
+      to: recipientEmails,
       subject,
       html,
     });
@@ -197,12 +221,15 @@ export async function sendWeeklySummary(): Promise<void> {
 
     const { data: notifSetting } = await admin
       .from('notification_settings')
-      .select('enabled, recipients')
+      .select('enabled, recipient_profile_ids')
       .eq('event_type', 'weekly_summary')
       .single();
 
     if (!notifSetting?.enabled) return;
-    if (!notifSetting.recipients?.length) return;
+    if (!notifSetting.recipient_profile_ids?.length) return;
+
+    const recipientEmails = await resolveRecipientEmails(notifSetting.recipient_profile_ids);
+    if (!recipientEmails.length) return;
 
     const today = new Date();
     const monday = new Date(today);
@@ -271,7 +298,7 @@ export async function sendWeeklySummary(): Promise<void> {
 
     await resend.emails.send({
       from: RESEND_FROM,
-      to: notifSetting.recipients,
+      to: recipientEmails,
       subject,
       html,
     });

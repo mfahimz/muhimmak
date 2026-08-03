@@ -77,8 +77,8 @@ export default async function SessionDetailPage({ params }: PageProps) {
 
   if (sessionError || !session) notFound();
 
-  // Receptionist can only see their own sessions
-  if (role === 'receptionist' && session.created_by !== user.id) {
+  // Receptionists cannot open or view session details/results
+  if (role === 'receptionist') {
     redirect('/dashboard/sessions');
   }
 

@@ -78,13 +78,12 @@ export default async function Page() {
     const { count: sCount } = await admin
       .from("sessions")
       .select("id", { count: "exact", head: true })
-      .eq("created_by", user.id)
+      .neq("status", "refused")
       .gte("started_at", startOfTodayISO)
 
     const { count: rCount } = await admin
       .from("sessions")
       .select("id", { count: "exact", head: true })
-      .eq("created_by", user.id)
       .eq("status", "refused")
       .gte("refused_at", startOfTodayISO)
 
@@ -99,6 +98,7 @@ export default async function Page() {
       const { count: sessionsToday, error: sError } = await supabase
         .from("sessions")
         .select("id", { count: "exact", head: true })
+        .neq("status", "refused")
         .gte("started_at", startOfTodayISO)
 
       const { count: refusalsToday, error: rError } = await supabase

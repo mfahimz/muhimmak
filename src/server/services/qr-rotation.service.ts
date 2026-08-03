@@ -120,16 +120,26 @@ export async function rotateQrToken(): Promise<{
     width: 400,
   });
 
-  // 6. Query recipient notification emails
-  const { data: recipients } = await admin
-    .from('profiles')
-    .select('notification_email')
-    .eq('is_active', true)
-    .not('notification_email', 'is', null);
+  // 6. Query recipient notification emails from notification_settings for 'daily_qr'
+  const { data: notifSetting } = await admin
+    .from('notification_settings')
+    .select('enabled, recipient_profile_ids')
+    .eq('event_type', 'daily_qr')
+    .single();
 
-  const emailList = (recipients || [])
-    .map((r) => r.notification_email?.trim())
-    .filter((e): e is string => Boolean(e && e.includes('@')));
+  let emailList: string[] = [];
+  if (notifSetting?.enabled && notifSetting.recipient_profile_ids?.length) {
+    const { data: profileRecipients } = await admin
+      .from('profiles')
+      .select('notification_email')
+      .in('id', notifSetting.recipient_profile_ids)
+      .eq('is_active', true)
+      .not('notification_email', 'is', null);
+
+    emailList = (profileRecipients || [])
+      .map((r) => r.notification_email?.trim())
+      .filter((e): e is string => Boolean(e && e.includes('@')));
+  }
 
   let recipientCount = 0;
 
@@ -283,16 +293,26 @@ export async function resetQrNow(): Promise<{
     width: 400,
   });
 
-  // 4. Query recipient notification emails
-  const { data: recipients } = await admin
-    .from('profiles')
-    .select('notification_email')
-    .eq('is_active', true)
-    .not('notification_email', 'is', null);
+  // 4. Query recipient notification emails from notification_settings for 'qr_manual_reset'
+  const { data: notifSetting } = await admin
+    .from('notification_settings')
+    .select('enabled, recipient_profile_ids')
+    .eq('event_type', 'qr_manual_reset')
+    .single();
 
-  const emailList = (recipients || [])
-    .map((r) => r.notification_email?.trim())
-    .filter((e): e is string => Boolean(e && e.includes('@')));
+  let emailList: string[] = [];
+  if (notifSetting?.enabled && notifSetting.recipient_profile_ids?.length) {
+    const { data: profileRecipients } = await admin
+      .from('profiles')
+      .select('notification_email')
+      .in('id', notifSetting.recipient_profile_ids)
+      .eq('is_active', true)
+      .not('notification_email', 'is', null);
+
+    emailList = (profileRecipients || [])
+      .map((r) => r.notification_email?.trim())
+      .filter((e): e is string => Boolean(e && e.includes('@')));
+  }
 
   let recipientCount = 0;
 
