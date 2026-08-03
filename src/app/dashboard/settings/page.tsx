@@ -50,7 +50,8 @@ export default async function SettingsPage() {
   const facilitySettings = facilitySettingsData || {
     google_review_url: "https://search.google.com/local/writereview?placeid=ChIJplaceholder",
     review_qr_threshold_percent: 90,
-    default_form_id: null
+    default_form_id: null,
+    display_orientation: "fit_to_width",
   }
 
   // Fetch notification settings from database

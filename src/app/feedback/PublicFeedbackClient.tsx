@@ -22,6 +22,7 @@ interface PublicFeedbackClientProps {
   facilitySettings: {
     google_review_url: string
     review_qr_threshold_percent: number
+    display_orientation?: string
   }
   initialLocale: "en" | "ar"
 }
@@ -132,6 +133,7 @@ export function PublicFeedbackClient({
   const [session, setSession] = React.useState<SurveySession | null>(null)
 
   const isArabic = locale === "ar"
+  const isFitToScreen = facilitySettings?.display_orientation === 'fit_to_screen'
 
   // Step 1: Language selection helper
   const handleSelectLanguage = (selectedLang: "en" | "ar") => {
@@ -247,7 +249,7 @@ export function PublicFeedbackClient({
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-slate-100 text-slate-800 selection:bg-indigo-500 selection:text-white" dir={isArabic ? "rtl" : "ltr"}>
         <div className="flex-1 flex items-center justify-center w-full py-8">
-          <Card className="max-w-lg w-full border border-slate-200 shadow-lg rounded-3xl overflow-hidden bg-white p-6 md:p-8 text-center space-y-8 animate-scale-in">
+          <Card className={`${isFitToScreen ? 'max-w-3xl w-full' : 'max-w-lg w-full'} border border-slate-200 shadow-lg rounded-3xl overflow-hidden bg-white p-6 md:p-8 text-center space-y-8 animate-scale-in`}>
             <div className="space-y-3">
               <div className="size-16 rounded-2xl bg-indigo-50 text-indigo-600 border border-indigo-100 flex items-center justify-center mx-auto shadow-sm">
                 <Globe className="size-8 animate-pulse" />
@@ -289,7 +291,7 @@ export function PublicFeedbackClient({
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-slate-100 text-slate-800" dir={isArabic ? "rtl" : "ltr"}>
         <div className="flex-1 flex items-center justify-center w-full py-8">
-          <Card className="max-w-lg w-full border border-slate-200 shadow-lg rounded-3xl overflow-hidden bg-white p-6 md:p-8 space-y-6 animate-fade-in">
+          <Card className={`${isFitToScreen ? 'max-w-3xl w-full' : 'max-w-lg w-full'} border border-slate-200 shadow-lg rounded-3xl overflow-hidden bg-white p-6 md:p-8 space-y-6 animate-fade-in`}>
             {/* Header & Language Toggle */}
             <div className="flex items-center justify-between border-b border-slate-200 pb-4">
               <div>
@@ -392,8 +394,9 @@ export function PublicFeedbackClient({
                       maxLength={5}
                       value={plateDigits}
                       onChange={(e) => handleDigitsChange(e.target.value)}
-                      placeholder="12345"
-                      className="bg-white border border-slate-300 text-slate-800 placeholder:text-slate-400 rounded-xl text-base focus-visible:ring-indigo-500 font-semibold uppercase tracking-wider"
+                      placeholder={isArabic ? "١٢٣٤٥" : "12345"}
+                      dir={isArabic ? "rtl" : "ltr"}
+                      className={`bg-white border border-slate-300 text-slate-800 placeholder:text-slate-400 rounded-xl text-base focus-visible:ring-indigo-500 font-semibold uppercase tracking-wider ${isArabic ? 'text-right' : 'text-left'}`}
                       style={{ height: '48px' }}
                     />
                   </div>
@@ -453,7 +456,7 @@ export function PublicFeedbackClient({
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-slate-100 text-slate-800" dir={isArabic ? "rtl" : "ltr"}>
         <div className="flex-1 flex items-center justify-center w-full py-8">
-          <Card className="max-w-lg w-full border border-slate-200 shadow-lg rounded-3xl overflow-hidden bg-white p-6 md:p-8 space-y-6 animate-fade-in">
+          <Card className={`${isFitToScreen ? 'max-w-3xl w-full' : 'max-w-lg w-full'} border border-slate-200 shadow-lg rounded-3xl overflow-hidden bg-white p-6 md:p-8 space-y-6 animate-fade-in`}>
             <div className="flex items-center justify-between border-b border-slate-200 pb-4">
               <div>
                 <h2 className="text-lg font-bold text-slate-800">
@@ -538,7 +541,7 @@ export function PublicFeedbackClient({
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-slate-100 text-slate-800" dir={isArabic ? "rtl" : "ltr"}>
         <div className="flex-1 flex items-center justify-center w-full py-8">
-          <Card className="max-w-lg w-full border border-slate-200 shadow-lg rounded-3xl overflow-hidden bg-white p-6 md:p-8 text-center space-y-6 animate-scale-in">
+          <Card className={`${isFitToScreen ? 'max-w-3xl w-full' : 'max-w-lg w-full'} border border-slate-200 shadow-lg rounded-3xl overflow-hidden bg-white p-6 md:p-8 text-center space-y-6 animate-scale-in`}>
             <div className="size-16 rounded-full bg-amber-50 text-amber-600 border border-amber-100 flex items-center justify-center mx-auto">
               <ShieldAlert className="size-8" />
             </div>

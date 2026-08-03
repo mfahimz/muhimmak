@@ -2,7 +2,7 @@ import 'server-only';
 
 const baseStyles = `
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
   </style>
 `;
 
@@ -15,25 +15,25 @@ function buildEmailWrapper(content: string): string {
       <meta charset="utf-8"/>
       <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
     </head>
-    <body style="margin:0;padding:0;background:#0f172a;font-family:Inter,sans-serif;">
-      <table width="100%" cellpadding="0" cellspacing="0" style="background:#0f172a;padding:32px 16px;">
+    <body style="margin:0;padding:0;background-color:#f4f6f8;font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;">
+      <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f6f8;padding:32px 16px;">
         <tr>
           <td align="center">
-            <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
+            <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background-color:#ffffff;border:1px solid #e2e8f0;border-radius:12px;border-collapse:separate;box-shadow:0 4px 6px -1px rgba(0,0,0,0.03);">
 
               <!-- Header -->
               <tr>
-                <td style="background:linear-gradient(135deg,#1e1b4b 0%,#312e81 50%,#1e1b4b 100%);border-radius:12px 12px 0 0;padding:32px 36px;border-bottom:1px solid #4f46e5;">
+                <td style="background-color:#ffffff;border-radius:12px 12px 0 0;padding:32px 36px 24px 36px;border-bottom:2px solid #4f46e5;">
                   <table width="100%" cellpadding="0" cellspacing="0">
                     <tr>
                       <td>
-                        <p style="margin:0 0 4px 0;font-size:11px;font-weight:600;letter-spacing:3px;color:#818cf8;text-transform:uppercase;">Al Maraghi Motors</p>
-                        <h1 style="margin:0;font-size:24px;font-weight:600;color:#f1f5f9;letter-spacing:-0.5px;">Muhimmak</h1>
-                        <p style="margin:6px 0 0 0;font-size:13px;color:#94a3b8;">مُهِمَّك — You Matter</p>
+                        <p style="margin:0 0 4px 0;font-size:11px;font-weight:700;letter-spacing:2px;color:#4f46e5;text-transform:uppercase;">Al Maraghi Motors</p>
+                        <h1 style="margin:0;font-size:24px;font-weight:700;color:#0f172a;letter-spacing:-0.5px;line-height:1.2;">Muhimmak</h1>
+                        <p style="margin:4px 0 0 0;font-size:13px;font-weight:500;color:#64748b;">مُهِمَّك — You Matter</p>
                       </td>
-                      <td align="right">
-                        <div style="width:44px;height:44px;background:rgba(99,102,241,0.2);border:1px solid rgba(99,102,241,0.4);border-radius:50%;display:inline-block;line-height:44px;text-align:center;">
-                          <span style="font-size:20px;">⚙</span>
+                      <td align="right" valign="top">
+                        <div style="width:44px;height:44px;background-color:#eef2ff;border:1px solid #c7d2fe;border-radius:50%;display:inline-block;line-height:44px;text-align:center;">
+                          <span style="font-size:18px;color:#4f46e5;">⚙</span>
                         </div>
                       </td>
                     </tr>
@@ -43,18 +43,18 @@ function buildEmailWrapper(content: string): string {
 
               <!-- Body -->
               <tr>
-                <td style="background:#1e293b;padding:32px 36px;border-left:1px solid #334155;border-right:1px solid #334155;">
+                <td style="background-color:#ffffff;padding:32px 36px;">
                   ${content}
                 </td>
               </tr>
 
               <!-- Footer -->
               <tr>
-                <td style="background:#0f172a;border-radius:0 0 12px 12px;padding:20px 36px;border:1px solid #1e293b;border-top:none;">
-                  <p style="margin:0;font-size:11px;color:#475569;text-align:center;">
+                <td style="background-color:#f8fafc;border-radius:0 0 12px 12px;padding:24px 36px;border-top:1px solid #e2e8f0;">
+                  <p style="margin:0 0 4px 0;font-size:12px;font-weight:500;color:#64748b;text-align:center;">
                     Muhimmak Feedback System &nbsp;·&nbsp; Al Maraghi Motors &nbsp;·&nbsp; UAE
                   </p>
-                  <p style="margin:6px 0 0 0;font-size:11px;color:#334155;text-align:center;">
+                  <p style="margin:0;font-size:11px;color:#94a3b8;text-align:center;">
                     This is an automated notification. Do not reply to this email.
                   </p>
                 </td>
@@ -72,19 +72,19 @@ function buildEmailWrapper(content: string): string {
 function buildDataTable(rows: { label: string; value: string; highlight?: 'red' | 'green' | 'normal' }[]): string {
   const rowsHtml = rows.map(row => {
     const valueColor =
-      row.highlight === 'red' ? '#f87171' :
-      row.highlight === 'green' ? '#34d399' :
-      '#e2e8f0';
+      row.highlight === 'red' ? '#dc2626' :
+      row.highlight === 'green' ? '#16a34a' :
+      '#0f172a';
     return `
       <tr>
-        <td style="padding:12px 0;font-size:13px;color:#64748b;border-bottom:1px solid #1e293b;width:50%;">${row.label}</td>
-        <td style="padding:12px 0;font-size:13px;font-weight:500;color:${valueColor};border-bottom:1px solid #1e293b;text-align:right;">${row.value}</td>
+        <td style="padding:12px 0;font-size:13px;font-weight:500;color:#64748b;border-bottom:1px solid #f1f5f9;width:50%;">${row.label}</td>
+        <td style="padding:12px 0;font-size:13px;font-weight:600;color:${valueColor};border-bottom:1px solid #f1f5f9;text-align:right;">${row.value}</td>
       </tr>
     `;
   }).join('');
 
   return `
-    <table width="100%" cellpadding="0" cellspacing="0" style="margin:20px 0;">
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin:20px 0;border-top:1px solid #f1f5f9;">
       ${rowsHtml}
     </table>
   `;
@@ -92,19 +92,22 @@ function buildDataTable(rows: { label: string; value: string; highlight?: 'red' 
 
 function buildNarrativeBlock(narrativeHtml: string): string {
   return `
-    <div style="background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.2);border-radius:8px;padding:16px 20px;margin:20px 0;">
-      <p style="margin:0 0 6px 0;font-size:10px;font-weight:600;letter-spacing:2px;color:#818cf8;text-transform:uppercase;">AI Analysis</p>
-      <div style="font-size:14px;color:#cbd5e1;line-height:1.7;">${narrativeHtml}</div>
+    <div style="background-color:#f8fafc;border:1px solid #e2e8f0;border-left:4px solid #4f46e5;border-radius:6px;padding:18px 20px;margin:24px 0;">
+      <p style="margin:0 0 8px 0;font-size:11px;font-weight:700;letter-spacing:1.5px;color:#4f46e5;text-transform:uppercase;">AI Analysis</p>
+      <div style="font-size:14px;color:#334155;line-height:1.7;">${narrativeHtml}</div>
     </div>
   `;
 }
 
 function buildAlertBadge(score: number, threshold: number): string {
   const severity = score < threshold * 0.5 ? 'Critical' : score < threshold * 0.75 ? 'Warning' : 'Alert';
-  const color = score < threshold * 0.5 ? '#ef4444' : score < threshold * 0.75 ? '#f59e0b' : '#f97316';
+  const bgColor = score < threshold * 0.5 ? '#fef2f2' : score < threshold * 0.75 ? '#fffbebf' : '#fff7ed';
+  const borderColor = score < threshold * 0.5 ? '#fecaca' : score < threshold * 0.75 ? '#fde68a' : '#ffedd5';
+  const textColor = score < threshold * 0.5 ? '#dc2626' : score < threshold * 0.75 ? '#d97706' : '#ea580c';
+
   return `
-    <div style="display:inline-block;background:${color}22;border:1px solid ${color}66;border-radius:6px;padding:4px 12px;margin-bottom:16px;">
-      <span style="font-size:12px;font-weight:600;color:${color};letter-spacing:1px;text-transform:uppercase;">${severity}</span>
+    <div style="display:inline-block;background-color:${bgColor};border:1px solid ${borderColor};border-radius:6px;padding:4px 12px;margin-bottom:16px;">
+      <span style="font-size:12px;font-weight:700;color:${textColor};letter-spacing:1px;text-transform:uppercase;">${severity}</span>
     </div>
   `;
 }
@@ -120,7 +123,7 @@ export function lowSatisfactionAlertEmail(data: {
   const severity = data.score < data.threshold * 0.5 ? 'Critical' : 'Alert';
   const content = `
     ${buildAlertBadge(data.score, data.threshold)}
-    <h2 style="margin:0 0 6px 0;font-size:20px;font-weight:600;color:#f1f5f9;">Low Satisfaction ${severity}</h2>
+    <h2 style="margin:0 0 6px 0;font-size:20px;font-weight:700;color:#0f172a;">Low Satisfaction ${severity}</h2>
     <p style="margin:0 0 20px 0;font-size:13px;color:#64748b;">A session score fell below your alert threshold.</p>
 
     ${buildNarrativeBlock(data.narrativeHtml)}
@@ -148,7 +151,7 @@ export function dailySummaryEmail(data: {
   narrativeHtml: string;
 }): { subject: string; html: string } {
   const content = `
-    <h2 style="margin:0 0 6px 0;font-size:20px;font-weight:600;color:#f1f5f9;">Daily Summary</h2>
+    <h2 style="margin:0 0 6px 0;font-size:20px;font-weight:700;color:#0f172a;">Daily Summary</h2>
     <p style="margin:0 0 20px 0;font-size:13px;color:#64748b;">${data.date}</p>
 
     ${buildNarrativeBlock(data.narrativeHtml)}
@@ -176,7 +179,7 @@ export function weeklySummaryEmail(data: {
   narrativeHtml: string;
 }): { subject: string; html: string } {
   const content = `
-    <h2 style="margin:0 0 6px 0;font-size:20px;font-weight:600;color:#f1f5f9;">Weekly Summary</h2>
+    <h2 style="margin:0 0 6px 0;font-size:20px;font-weight:700;color:#0f172a;">Weekly Summary</h2>
     <p style="margin:0 0 20px 0;font-size:13px;color:#64748b;">${data.weekStart} — ${data.weekEnd}</p>
 
     ${buildNarrativeBlock(data.narrativeHtml)}
@@ -201,16 +204,16 @@ export function dailyQrEmail(data: {
   isManualReset?: boolean;
 }): { subject: string; html: string } {
   const imageTag = data.qrCid
-    ? `<div style="text-align:center;margin:24px 0;"><img src="cid:${data.qrCid}" alt="Daily Feedback QR Code" style="width:220px;height:220px;border-radius:16px;border:4px solid #334155;background:#ffffff;padding:12px;display:inline-block;" /></div>`
+    ? `<div style="text-align:center;margin:24px 0;"><img src="cid:${data.qrCid}" alt="Daily Feedback QR Code" style="width:220px;height:220px;border-radius:12px;border:1px solid #e2e8f0;background:#ffffff;padding:12px;display:inline-block;" /></div>`
     : '';
 
   const titleText = data.isManualReset ? "Updated Feedback QR Code (Manual Reset)" : "Today's Feedback QR Code";
   const subjectTag = data.isManualReset ? "[Muhimmak] Daily QR Feedback Link (Manual Reset)" : "[Muhimmak] Daily QR Feedback Link";
 
   const content = `
-    <h2 style="margin:0 0 6px 0;font-size:20px;font-weight:600;color:#f1f5f9;">${titleText}</h2>
-    <p style="margin:0 0 20px 0;font-size:13px;color:#94a3b8;">${data.dateLabel}</p>
-    <p style="margin:0 0 16px 0;font-size:14px;color:#cbd5e1;line-height:1.6;">
+    <h2 style="margin:0 0 6px 0;font-size:20px;font-weight:700;color:#0f172a;">${titleText}</h2>
+    <p style="margin:0 0 20px 0;font-size:13px;color:#64748b;">${data.dateLabel}</p>
+    <p style="margin:0 0 16px 0;font-size:14px;color:#334155;line-height:1.6;">
       ${data.isManualReset
         ? 'The daily QR code for customer feedback has been manually reset by an administrator. Please use the updated QR code below.'
         : 'Here is the updated daily QR code for customer feedback. Please display or present this QR code to customers today.'}
@@ -218,9 +221,9 @@ export function dailyQrEmail(data: {
 
     ${imageTag}
 
-    <div style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:16px;margin:20px 0;text-align:center;word-break:break-all;">
-      <p style="margin:0 0 8px 0;font-size:11px;font-weight:600;color:#818cf8;text-transform:uppercase;letter-spacing:1px;">Direct Link</p>
-      <a href="${data.feedbackUrl}" target="_blank" style="font-size:14px;color:#38bdf8;text-decoration:underline;">${data.feedbackUrl}</a>
+    <div style="background-color:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:16px;margin:20px 0;text-align:center;word-break:break-all;">
+      <p style="margin:0 0 8px 0;font-size:11px;font-weight:700;color:#4f46e5;text-transform:uppercase;letter-spacing:1px;">Direct Link</p>
+      <a href="${data.feedbackUrl}" target="_blank" style="font-size:14px;color:#2563eb;text-decoration:underline;font-weight:500;">${data.feedbackUrl}</a>
     </div>
   `;
 
@@ -229,4 +232,5 @@ export function dailyQrEmail(data: {
     html: buildEmailWrapper(content),
   };
 }
+
 

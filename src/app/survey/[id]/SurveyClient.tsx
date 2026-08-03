@@ -48,6 +48,7 @@ interface SurveyClientProps {
   facilitySettings: {
     google_review_url: string
     review_qr_threshold_percent: number
+    display_orientation?: string
   }
   isPublicMode?: boolean
 }
@@ -76,6 +77,7 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
   const t = useTranslations("Survey")
 
   const isPublic = Boolean(isPublicMode || !(session as any).created_by || (session as any).channel === 'public_qr')
+  const isFitToScreen = facilitySettings?.display_orientation === 'fit_to_screen'
   
   // Parse fields
   const fields = React.useMemo(() => {
@@ -521,8 +523,8 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
 
   if (step === "handoff") {
     return (
-      <div className="flex-1 flex items-center justify-center p-4">
-        <Card className="max-w-2xl w-full border border-slate-200 shadow-xl dark:border-slate-800 rounded-3xl overflow-hidden bg-white/80 dark:bg-slate-900/80 backdrop-blur-md p-8 md:p-12 text-center space-y-8 animate-fade-in">
+      <div className="flex-1 flex items-center justify-center p-4" dir={isArabic ? "rtl" : "ltr"}>
+        <Card className={`${isFitToScreen ? 'max-w-none w-full' : 'max-w-2xl w-full'} border border-slate-200 shadow-xl dark:border-slate-800 rounded-3xl overflow-hidden bg-white/80 dark:bg-slate-900/80 backdrop-blur-md p-8 md:p-12 text-center space-y-8 animate-fade-in`}>
           <div className="space-y-3">
             <h2 className="text-3xl font-extrabold text-slate-900 dark:text-slate-100 tracking-tight">
               {t("handoffTitle")}
@@ -544,8 +546,8 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
 
   if (step === "consent") {
     return (
-      <div className="flex-1 flex items-center justify-center p-4">
-        <Card className="max-w-2xl w-full border border-slate-200 shadow-xl dark:border-slate-800 rounded-3xl overflow-hidden bg-white/80 dark:bg-slate-900/80 backdrop-blur-md p-8 md:p-12 text-center space-y-8 animate-fade-in">
+      <div className="flex-1 flex items-center justify-center p-4" dir={isArabic ? "rtl" : "ltr"}>
+        <Card className={`${isFitToScreen ? 'max-w-none w-full' : 'max-w-2xl w-full'} border border-slate-200 shadow-xl dark:border-slate-800 rounded-3xl overflow-hidden bg-white/80 dark:bg-slate-900/80 backdrop-blur-md p-8 md:p-12 text-center space-y-8 animate-fade-in`}>
           {plateNumber && (
             <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-700 text-xs font-bold uppercase tracking-wider dark:bg-indigo-950/40 dark:border-indigo-900 dark:text-indigo-400">
               Vehicle: {plateNumber}
@@ -605,7 +607,7 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
 
   if (step === "refused") {
     return (
-      <div className="flex-1 flex items-center justify-center p-4">
+      <div className="flex-1 flex items-center justify-center p-4" dir={isArabic ? "rtl" : "ltr"}>
         <Card className="max-w-md w-full border border-slate-200 shadow-xl dark:border-slate-800 rounded-3xl bg-white p-8 text-center space-y-6 animate-fade-in">
           <div className="size-16 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center mx-auto">
             <RefreshCw className="size-8" />
@@ -642,7 +644,7 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
     }
 
     return (
-      <div className="flex-1 flex items-center justify-center p-4">
+      <div className="flex-1 flex items-center justify-center p-4" dir={isArabic ? "rtl" : "ltr"}>
         <Card className="max-w-md w-full border border-slate-200 shadow-xl dark:border-slate-800 rounded-3xl bg-white p-8 text-center space-y-6 animate-fade-in">
           <div className="size-16 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center mx-auto">
             <AlertTriangle className="size-8 text-slate-400" />
@@ -662,8 +664,8 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
 
   if (step === "completed") {
     return (
-      <div className="flex-1 flex items-center justify-center p-4">
-        <Card className="max-w-xl w-full border border-slate-200 shadow-2xl dark:border-slate-800 rounded-3xl overflow-hidden bg-white p-8 md:p-12 text-center space-y-8 animate-scale-in">
+      <div className="flex-1 flex items-center justify-center p-4" dir={isArabic ? "rtl" : "ltr"}>
+        <Card className={`${isFitToScreen ? 'max-w-none w-full' : 'max-w-xl w-full'} border border-slate-200 shadow-2xl dark:border-slate-800 rounded-3xl overflow-hidden bg-white p-8 md:p-12 text-center space-y-8 animate-scale-in`}>
           <div className="size-16 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto dark:bg-emerald-950/40 dark:text-emerald-400">
             <ThumbsUp className="size-8" />
           </div>
@@ -729,7 +731,7 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
     : 0
 
   return (
-    <div className="flex-1 flex flex-col justify-between p-4 md:p-8 max-w-4xl mx-auto w-full animate-fade-in">
+    <div className={`flex-1 flex flex-col justify-between p-4 md:p-8 ${isFitToScreen ? 'max-w-none w-full px-4 md:px-12' : 'max-w-4xl mx-auto w-full'} animate-fade-in`} dir={isArabic ? "rtl" : "ltr"}>
       {/* Progress Bar & Header */}
       <div className="space-y-3">
         <div className="flex items-center justify-between text-xs font-semibold text-slate-500">
@@ -767,12 +769,11 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
               <div className="flex items-center justify-center w-full">
                 {currentField.type === "star_rating" && (() => {
                   const emojiScale = ['😞', '😕', '😐', '🙂', '😄']
-                  const displayScale = isArabic ? [...emojiScale].reverse() : emojiScale
                   const currentAnswer = answers[currentField.id]
                   return (
-                    <div className="flex items-center justify-center gap-3 py-6">
-                      {displayScale.map((emoji, displayIdx) => {
-                        const ratingValue = isArabic ? (5 - displayIdx) : (displayIdx + 1)
+                    <div className="flex items-center justify-center gap-3 py-6" dir={isArabic ? "rtl" : "ltr"}>
+                      {emojiScale.map((emoji, idx) => {
+                        const ratingValue = idx + 1
                         const isSelected = currentAnswer === ratingValue
                         return (
                           <button
@@ -802,7 +803,7 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
                 {currentField.type === "numeric_scale" && (() => {
                   const currentAnswer = answers[currentField.id]
                   return (
-                    <div className="flex flex-wrap gap-2 justify-center py-6 w-full">
+                    <div className="flex flex-wrap gap-2 justify-center py-6 w-full" dir={isArabic ? "rtl" : "ltr"}>
                       {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((num) => {
                         const isSelected = currentAnswer === num
                         return (

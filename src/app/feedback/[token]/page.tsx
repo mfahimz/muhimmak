@@ -51,13 +51,14 @@ export default async function DynamicTokenFeedbackPage({
   // 2. Fetch Facility Settings
   const { data: settings } = await admin
     .from("facility_settings")
-    .select("default_form_id, google_review_url, review_qr_threshold_percent")
+    .select("default_form_id, google_review_url, review_qr_threshold_percent, display_orientation")
     .eq("id", "00000000-0000-0000-0000-000000000000")
     .single()
 
   const defaultFormId = settings?.default_form_id
   const googleReviewUrl = settings?.google_review_url || ""
   const threshold = settings?.review_qr_threshold_percent ?? 90
+  const displayOrientation = settings?.display_orientation || "fit_to_width"
 
   // 3. Fetch Form if default_form_id exists
   let form: any = null
@@ -101,6 +102,7 @@ export default async function DynamicTokenFeedbackPage({
       facilitySettings={{
         google_review_url: googleReviewUrl,
         review_qr_threshold_percent: threshold,
+        display_orientation: displayOrientation,
       }}
       initialLocale={initialLocale}
     />

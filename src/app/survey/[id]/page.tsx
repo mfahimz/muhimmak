@@ -39,13 +39,14 @@ export default async function SurveyKioskPage({ params }: PageProps) {
   // 3. Fetch facility settings (singleton)
   const { data: facilitySettings } = await admin
     .from("facility_settings")
-    .select("google_review_url, review_qr_threshold_percent")
+    .select("google_review_url, review_qr_threshold_percent, display_orientation")
     .eq("id", "00000000-0000-0000-0000-000000000000")
     .single()
 
   const settings = facilitySettings || {
     google_review_url: "https://search.google.com/local/writereview?placeid=ChIJplaceholder",
-    review_qr_threshold_percent: 90
+    review_qr_threshold_percent: 90,
+    display_orientation: "fit_to_width"
   }
 
   return (

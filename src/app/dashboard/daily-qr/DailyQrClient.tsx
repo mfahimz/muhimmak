@@ -22,6 +22,7 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { toArabicNumerals } from "@/lib/utils/arabic-numerals"
 
 interface DailyQrClientProps {
   qrInfo: {
@@ -121,7 +122,7 @@ export function DailyQrClient({ qrInfo, canManageQr = false }: DailyQrClientProp
         <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
           <Badge variant="outline" className="px-3 py-1 text-xs font-semibold gap-1.5 border-slate-200 dark:border-slate-800">
             <Calendar className="size-3.5 text-slate-500" />
-            <span>{qrInfo.today_date_str}</span>
+            <span>{toArabicNumerals(qrInfo.today_date_str, locale)}</span>
           </Badge>
 
           {qrInfo.is_today_valid ? (

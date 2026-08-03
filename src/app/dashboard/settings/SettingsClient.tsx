@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { LayoutGrid, ShieldCheck, Building2, BellRing, Info, Check, AlertTriangle, Loader2, Eye, Calendar, Plus, Trash2 } from "lucide-react"
+import { LayoutGrid, ShieldCheck, Building2, BellRing, Info, Check, AlertTriangle, Loader2, Eye, Calendar, Plus, Trash2, Monitor, Maximize2 } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import type { NotificationSetting, NotificationEvent } from "@/server/services/notifications.service"
@@ -108,6 +108,7 @@ export interface FacilitySettings {
   review_qr_threshold_percent: number
   ai_business_context?: string | null
   default_form_id?: string | null
+  display_orientation?: 'fit_to_width' | 'fit_to_screen' | string
 }
 
 interface SettingsClientProps {
@@ -129,6 +130,9 @@ export function SettingsClient({
   const [reviewQrThresholdPercent, setReviewQrThresholdPercent] = React.useState(initialFacilitySettings.review_qr_threshold_percent)
   const [aiBusinessContext, setAiBusinessContext] = React.useState(initialFacilitySettings.ai_business_context || "")
   const [defaultFormId, setDefaultFormId] = React.useState<string | null>(initialFacilitySettings.default_form_id || null)
+  const [displayOrientation, setDisplayOrientation] = React.useState<"fit_to_width" | "fit_to_screen">(
+    initialFacilitySettings.display_orientation === "fit_to_screen" ? "fit_to_screen" : "fit_to_width"
+  )
   const [isSaving, setIsSaving] = React.useState(false)
   const [activeTab, setActiveTab] = React.useState("form-types")
 
@@ -287,24 +291,27 @@ export function SettingsClient({
     }
   }
 
-  // Save facility settings
+  // Save facility settings via API route
   const handleSaveFacilitySettings = async () => {
     setIsSaving(true)
-    const supabase = createClient()
 
     try {
-      const { error } = await supabase
-        .from("facility_settings")
-        .upsert({
-          id: "00000000-0000-0000-0000-000000000000",
+      const res = await fetch("/api/v1/facility-settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
           google_review_url: googleReviewUrl,
           review_qr_threshold_percent: reviewQrThresholdPercent,
           ai_business_context: aiBusinessContext,
           default_form_id: defaultFormId || null,
-          updated_at: new Date().toISOString(),
-        })
+          display_orientation: displayOrientation,
+        }),
+      })
 
-      if (error) throw error
+      const data = await res.json()
+      if (!res.ok || data.error) {
+        throw new Error(data.error || t("errorSave"))
+      }
 
       toast.success(t("savedSuccess"))
     } catch (err: any) {
@@ -648,6 +655,66 @@ export function SettingsClient({
                   <p className="text-xs text-muted-foreground leading-normal">
                     {t("defaultFormDescription")}
                   </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                    {t("displayOrientationLabel")}
+                  </Label>
+                  <p className="text-xs text-muted-foreground leading-normal">
+                    {t("displayOrientationDesc")}
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setDisplayOrientation("fit_to_width")}
+                      className={`flex flex-col text-start p-4 rounded-xl border transition-all cursor-pointer ${
+                        displayOrientation === "fit_to_width"
+                          ? "border-indigo-600 bg-indigo-50/50 dark:bg-indigo-950/30 ring-2 ring-indigo-500/20"
+                          : "border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-slate-300 dark:hover:border-slate-700"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between w-full mb-2">
+                        <div className="flex items-center gap-2 font-bold text-sm text-slate-900 dark:text-slate-100">
+                          <Maximize2 className="size-4 text-indigo-600 dark:text-indigo-400" />
+                          <span>{t("fitToWidth")}</span>
+                        </div>
+                        {displayOrientation === "fit_to_width" && (
+                          <span className="size-5 rounded-full bg-indigo-600 text-white flex items-center justify-center">
+                            <Check className="size-3" />
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                        {t("fitToWidthDesc")}
+                      </p>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setDisplayOrientation("fit_to_screen")}
+                      className={`flex flex-col text-start p-4 rounded-xl border transition-all cursor-pointer ${
+                        displayOrientation === "fit_to_screen"
+                          ? "border-indigo-600 bg-indigo-50/50 dark:bg-indigo-950/30 ring-2 ring-indigo-500/20"
+                          : "border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-slate-300 dark:hover:border-slate-700"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between w-full mb-2">
+                        <div className="flex items-center gap-2 font-bold text-sm text-slate-900 dark:text-slate-100">
+                          <Monitor className="size-4 text-indigo-600 dark:text-indigo-400" />
+                          <span>{t("fitToScreen")}</span>
+                        </div>
+                        {displayOrientation === "fit_to_screen" && (
+                          <span className="size-5 rounded-full bg-indigo-600 text-white flex items-center justify-center">
+                            <Check className="size-3" />
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                        {t("fitToScreenDesc")}
+                      </p>
+                    </button>
+                  </div>
                 </div>
 
                 <div className="space-y-2">
