@@ -6,7 +6,7 @@ import { useTranslations } from "next-intl"
 import { useIdleTimer } from "@/hooks/useIdleTimer"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { ChevronLeft, AlertTriangle, ArrowRight, RefreshCw, QrCode, ThumbsUp, Loader2 } from "lucide-react"
+import { ChevronLeft, AlertTriangle, ArrowRight, RefreshCw, QrCode, ThumbsUp, Loader2, ShieldCheck } from "lucide-react"
 import { QRCodeSVG } from "qrcode.react"
 import { toArabicNumerals } from "@/lib/utils/arabic-numerals"
 
@@ -689,7 +689,7 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
   if (step === "consent") {
     return (
       <div className="flex-1 flex items-center justify-center p-4" dir={isArabic ? "rtl" : "ltr"}>
-        <Card className={`${isFitToScreen ? 'max-w-none w-full' : 'max-w-2xl w-full'} border border-slate-200 shadow-xl dark:border-slate-800 rounded-3xl overflow-hidden bg-white/80 dark:bg-slate-900/80 backdrop-blur-md p-8 md:p-12 text-center space-y-8 animate-fade-in`}>
+        <Card className={`${isFitToScreen ? 'max-w-none w-full' : 'max-w-2xl w-full'} border border-slate-200 shadow-xl dark:border-slate-800 rounded-3xl overflow-hidden bg-white/80 dark:bg-slate-900/80 backdrop-blur-md p-8 md:p-12 text-center space-y-6 animate-fade-in`}>
           {plateNumber && (
             <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-700 text-xs font-bold uppercase tracking-wider dark:bg-indigo-950/40 dark:border-indigo-900 dark:text-indigo-400">
               Vehicle: {plateNumber}
@@ -706,31 +706,22 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
           </div>
 
           <div className="p-5 rounded-2xl bg-slate-50 dark:bg-slate-950/50 text-xs text-slate-500 leading-relaxed text-start border border-slate-100 dark:border-slate-850">
-            <span className="font-bold text-slate-700 dark:text-slate-300 block mb-1">
-              {t("consentPrivacyTitle")}
+            {t("consentPrivacyTitle") && (
+              <span className="font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                {t("consentPrivacyTitle")}
+              </span>
+            )}
+            <span className="inline-flex items-start gap-1.5">
+              <ShieldCheck className="size-3.5 text-emerald-500 shrink-0 mt-0.5" />
+              <span>{t("consentPrivacyBody")}</span>
             </span>
-            {t("consentPrivacyBody")}
           </div>
 
-          <div className="flex flex-col sm:flex-row gap-4 pt-2">
-            <button
-              onClick={handleRefuseConsent}
-              disabled={refusingConsent || acceptingConsent}
-              className="flex-1 px-6 py-3 text-sm font-bold border border-slate-200 text-slate-600 rounded-2xl hover:bg-slate-50 transition active:scale-98 cursor-pointer dark:border-slate-800 dark:text-slate-400 disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
-            >
-              {refusingConsent ? (
-                <span className="flex items-center justify-center gap-2">
-                  <RefreshCw className="size-4 animate-spin" />
-                  <span>{t("consentDeclining")}</span>
-                </span>
-              ) : (
-                t("consentRefuse")
-              )}
-            </button>
+          <div className="flex flex-col gap-4 pt-2">
             <button
               onClick={handleAcceptConsent}
               disabled={acceptingConsent || refusingConsent}
-              className="flex-1 px-6 py-3 text-sm font-bold bg-indigo-600 text-white rounded-2xl hover:bg-indigo-500 transition shadow-md active:scale-98 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
+              className="w-full px-6 py-4 text-base font-bold bg-indigo-600 text-white rounded-2xl hover:bg-indigo-500 transition shadow-md active:scale-98 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
             >
               {acceptingConsent ? (
                 <span className="flex items-center justify-center gap-2">
@@ -739,6 +730,20 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
                 </span>
               ) : (
                 t("consentAccept")
+              )}
+            </button>
+            <button
+              onClick={handleRefuseConsent}
+              disabled={refusingConsent || acceptingConsent}
+              className="order-last px-4 py-2 text-sm text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300 underline-offset-2 hover:underline transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
+            >
+              {refusingConsent ? (
+                <span className="flex items-center justify-center gap-2">
+                  <RefreshCw className="size-4 animate-spin" />
+                  <span>{t("consentDeclining")}</span>
+                </span>
+              ) : (
+                t("consentRefuse")
               )}
             </button>
           </div>
