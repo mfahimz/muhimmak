@@ -22,6 +22,7 @@ import {
   BanIcon,
   ClockAlert,
   ChevronRightIcon,
+  ZapIcon,
 } from "lucide-react";
 import { ReceptionistImpactData } from "@/server/services/sessions.service";
 
@@ -31,6 +32,7 @@ interface ReceptionistImpactCardProps {
   todaysSessions?: number;
   todaysRefusals?: number;
   pendingClosuresCount?: number;
+  completionRate?: number | null;
 }
 
 export default function ReceptionistImpactCard({
@@ -39,6 +41,7 @@ export default function ReceptionistImpactCard({
   todaysSessions = 0,
   todaysRefusals = 0,
   pendingClosuresCount = 0,
+  completionRate = null,
 }: ReceptionistImpactCardProps) {
   const t = useTranslations("Impact");
   const tDash = useTranslations("Dashboard");
@@ -86,6 +89,52 @@ export default function ReceptionistImpactCard({
 
   return (
     <div className="space-y-4 animate-fade-in">
+      {/* TODAY'S PULSE CARD */}
+      <div className="relative overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-xs transition-all duration-300 hover:border-indigo-500/20">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="flex size-9 items-center justify-center rounded-xl bg-indigo-100 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 shrink-0">
+              <ZapIcon className="size-4.5" />
+            </div>
+            <h3 className="text-sm font-bold text-foreground">
+              {t("pulse.title")}
+            </h3>
+          </div>
+        </div>
+
+        <div className="mt-3 text-start space-y-1">
+          {completionRate !== null && completionRate !== undefined ? (
+            <h4
+              className={`text-3xl font-extrabold tracking-tight tabular-nums ${
+                completionRate <= 40
+                  ? "text-amber-600 dark:text-amber-400"
+                  : completionRate <= 70
+                  ? "text-indigo-600 dark:text-indigo-400"
+                  : "text-emerald-600 dark:text-emerald-400"
+              }`}
+            >
+              {toArabicNumerals(`${completionRate}%`, locale)}
+            </h4>
+          ) : (
+            <p className="text-sm font-semibold text-muted-foreground">
+              {t("pulse.noSessionsYet")}
+            </p>
+          )}
+
+          <p className="text-xs font-medium text-muted-foreground">
+            {completionRate === null || completionRate === undefined
+              ? t("pulse.msgNull")
+              : completionRate <= 40
+              ? t("pulse.msgLow")
+              : completionRate <= 70
+              ? t("pulse.msgModerate")
+              : completionRate <= 90
+              ? t("pulse.msgHigh")
+              : t("pulse.msgExcellent")}
+          </p>
+        </div>
+      </div>
+
       {/* A) TOP STATS BAR — Single row with Today's Sessions, Today's Refusals, & Prominent Log Refusal button */}
       <div className="relative overflow-hidden rounded-2xl border border-indigo-100 dark:border-indigo-900/40 bg-linear-to-br from-indigo-50/60 via-card to-card p-4 shadow-xs">
         {/* Decorative blur blob — Bug Fix: pointer-events-none added */}

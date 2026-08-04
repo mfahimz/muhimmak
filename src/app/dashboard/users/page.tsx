@@ -36,7 +36,7 @@ export default async function UsersPage() {
   // Fetch full staff list server-side (all profiles)
   const { data: profilesData } = await admin
     .from("profiles")
-    .select("id, full_name, role, is_active, created_at")
+    .select("id, full_name, role, is_active, created_at, notification_email")
     .order("created_at", { ascending: false });
 
   const initialUsers = profilesData || [];

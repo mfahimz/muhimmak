@@ -511,7 +511,16 @@
     "todaysRefusals": "Today's Refusals",
     "thisWeekRecap": "This Week: {sessions} sessions, {avg} avg",
     "pendingClosuresPreview": "{count} vehicles awaiting closure",
-    "viewPendingClosures": "View"
+    "viewPendingClosures": "View",
+    "pulse": {
+      "title": "Today's Pulse",
+      "noSessionsYet": "No sessions yet today",
+      "msgNull": "Start strong. Every session counts.",
+      "msgLow": "Push through. Encourage every customer to share their experience.",
+      "msgModerate": "Good momentum! Keep engaging customers.",
+      "msgHigh": "Great effort today, almost there!",
+      "msgExcellent": "Outstanding! Excellent engagement today."
+    }
   },
   "Users": {
     "title": "Team",

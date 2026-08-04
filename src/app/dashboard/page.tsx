@@ -74,6 +74,8 @@ export default async function Page() {
   let todaysSessionsCount = 0
   let todaysRefusalsCount = 0
 
+  let completionRate: number | null = null
+
   if (isReceptionist) {
     const { count: sCount } = await admin
       .from("sessions")
@@ -89,6 +91,9 @@ export default async function Page() {
 
     todaysSessionsCount = sCount ?? 0
     todaysRefusalsCount = rCount ?? 0
+
+    const totalToday = todaysSessionsCount + todaysRefusalsCount
+    completionRate = totalToday > 0 ? Math.round((todaysSessionsCount / totalToday) * 100) : null
 
     // Compute server-side receptionist impact stats
     receptionistImpact = await computeReceptionistImpact(user.id)
@@ -208,6 +213,7 @@ export default async function Page() {
                 todaysSessions={todaysSessionsCount}
                 todaysRefusals={todaysRefusalsCount}
                 pendingClosuresCount={pendingClosuresCount}
+                completionRate={completionRate}
               />
             )}
           </div>
