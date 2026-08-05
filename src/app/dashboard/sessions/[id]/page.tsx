@@ -220,6 +220,7 @@ export default async function SessionDetailPage({ params }: PageProps) {
 
   const threshold = facilitySettings?.review_qr_threshold_percent ?? 90;
   const t = await getTranslations('Sessions');
+  const canDelete = role === 'super_admin' || role === 'ceo';
 
   return (
     <>
@@ -242,7 +243,9 @@ export default async function SessionDetailPage({ params }: PageProps) {
         partnerFields={partnerFields}
         partnerAnswers={partnerAnswers}
         isVisitJourney={isVisitJourney}
+        canDelete={canDelete}
       />
     </>
   );
 }
+

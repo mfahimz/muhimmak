@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useTranslations, useLocale } from "next-intl";
 import {
   ArrowLeft,
@@ -22,9 +23,23 @@ import {
   LogOut,
   Link2,
   SkipForward,
+  Trash2,
+  Loader2,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { toast } from "sonner";
 import { toArabicNumerals } from "@/lib/utils/arabic-numerals";
 import type { VisitScoreDetails } from "@/server/services/sessions.service";
 
@@ -46,6 +61,7 @@ interface SessionDetailClientProps {
   partnerFields?: any[];
   partnerAnswers?: Record<string, any>;
   isVisitJourney?: boolean;
+  canDelete?: boolean;
 }
 
 export default function SessionDetailClient({
@@ -66,10 +82,31 @@ export default function SessionDetailClient({
   partnerFields,
   partnerAnswers,
   isVisitJourney = false,
+  canDelete = false,
 }: SessionDetailClientProps) {
   const t = useTranslations("Sessions");
   const tNumeric = useTranslations("NumericScale");
   const locale = useLocale();
+  const router = useRouter();
+
+  const [isDeleting, setIsDeleting] = React.useState(false);
+
+  const handleDeleteSession = async () => {
+    setIsDeleting(true);
+    try {
+      const res = await fetch(`/api/v1/sessions/${session.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to delete session");
+      }
+      toast.success("Session deleted successfully");
+      router.push("/dashboard/sessions");
+    } catch (err: any) {
+      console.error("Delete session error:", err);
+      toast.error(err.message || "Failed to delete session");
+      setIsDeleting(false);
+    }
+  };
 
   const dropOffInfo = React.useMemo(() => {
     if (!isVisitJourney) return null;
@@ -385,6 +422,38 @@ export default function SessionDetailClient({
               </span>
             )}
             {getStatusBadge(session.status)}
+            {canDelete && (
+              <AlertDialog>
+                <AlertDialogTrigger
+                  disabled={isDeleting}
+                  className="inline-flex items-center gap-1.5 h-8 px-3 text-sm font-medium text-rose-600 border border-rose-200 dark:border-rose-800 hover:bg-rose-50 dark:hover:bg-rose-950/50 hover:text-rose-700 rounded-xl cursor-pointer disabled:opacity-50 disabled:pointer-events-none bg-background"
+                >
+                  {isDeleting ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <Trash2 className="size-3.5" />
+                  )}
+                  <span>Delete Session</span>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Delete this session?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This will permanently delete the session and all its responses. This cannot be undone.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel className="rounded-xl">Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={handleDeleteSession}
+                      className="bg-rose-600 hover:bg-rose-700 text-white rounded-xl"
+                    >
+                      Delete
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
           </div>
         </div>
       </div>

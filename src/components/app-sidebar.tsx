@@ -28,6 +28,8 @@ import {
   ClockAlert,
   ChevronDown,
   QrCode,
+  LifeBuoy,
+  Inbox,
 } from "lucide-react"
 
 interface NavItem {
@@ -113,6 +115,24 @@ const NAV_GROUPS: NavGroup[] = [
       },
     ],
   },
+  {
+    titleKey: "navGroupHelp",
+    fallbackTitle: "Help",
+    items: [
+      {
+        title: "Report an Issue",
+        url: "/dashboard/support/new",
+        icon: LifeBuoy,
+        roles: ["super_admin", "ceo", "agm", "manager", "receptionist"],
+      },
+      {
+        title: "Support Tickets",
+        url: "/dashboard/support",
+        icon: Inbox,
+        roles: ["super_admin", "ceo"],
+      },
+    ],
+  },
 ]
 
 function CollapsibleNavGroup({
@@ -132,8 +152,8 @@ function CollapsibleNavGroup({
 
   const isAnyItemActive = React.useMemo(() => {
     return visibleItems.some((item) =>
-      item.url === "/dashboard"
-        ? pathname === "/dashboard"
+      item.url === "/dashboard" || item.url === "/dashboard/support" || item.url === "/dashboard/support/new"
+        ? pathname === item.url
         : pathname === item.url || pathname.startsWith(item.url + "/")
     )
   }, [visibleItems, pathname])
@@ -169,8 +189,8 @@ function CollapsibleNavGroup({
             {visibleItems.map((item) => {
               const Icon = item.icon
               const isActive =
-                item.url === "/dashboard"
-                  ? pathname === "/dashboard"
+                item.url === "/dashboard" || item.url === "/dashboard/support" || item.url === "/dashboard/support/new"
+                  ? pathname === item.url
                   : pathname === item.url || pathname.startsWith(item.url + "/")
               const translationKey = `nav.${item.title}`
 

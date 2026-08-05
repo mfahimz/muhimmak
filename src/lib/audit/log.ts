@@ -13,6 +13,7 @@ export type AuditAction =
   | 'session_consent_refused'
   | 'session_completed'
   | 'session_abandoned'
+  | 'session_deleted'
   | 'user_created'
   | 'user_updated'
   | 'user_deactivated'

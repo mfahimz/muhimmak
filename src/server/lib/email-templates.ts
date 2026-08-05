@@ -6,7 +6,7 @@ const baseStyles = `
   </style>
 `;
 
-function buildEmailWrapper(content: string): string {
+export function buildEmailWrapper(content: string): string {
   return `
     <!DOCTYPE html>
     <html>

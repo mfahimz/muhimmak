@@ -37,6 +37,7 @@
     "navGroupAnalytics": "Analytics",
     "navGroupManage": "Manage",
     "navGroupAdmin": "Admin",
+    "navGroupHelp": "Help",
     "nav": {
       "Dashboard": "Dashboard",
       "Feedback Sessions": "Feedback Sessions",
@@ -44,7 +45,9 @@
       "Reports": "Reports",
       "Feedback Forms": "Feedback Forms",
       "Team": "Team",
-      "Settings": "Settings"
+      "Settings": "Settings",
+      "Report an Issue": "Report an Issue",
+      "Support Tickets": "Support Tickets"
     }
   },
   "User": {
@@ -795,5 +798,31 @@
     "rightsBody": "Under applicable UAE data protection regulations, individuals have the right to request access to, correction of, or deletion of their personal information held within our systems. Inquiries or data rights requests may be submitted directly to our Compliance Office.",
     "contactTitle": "9. Privacy Contact Information",
     "contactBody": "For questions, concerns, or data protection inquiries regarding this Privacy Policy or the Muhimmak platform, please contact:\n\nAl Maraghi Auto Services - Legal & Compliance Department\nEmail: compliance@almaraghi.ae\nPhone: +971 2 555 1234\nAbu Dhabi, United Arab Emirates"
+  },
+  "Support": {
+    "pageTitle": "Support & Issue Reporting",
+    "newTicketTitle": "Report an Issue",
+    "placeholder": "Describe the issue you're experiencing. Write in English or Arabic — whatever is easier for you.",
+    "submitBtn": "Submit Ticket",
+    "successTitle": "Ticket Submitted",
+    "successMessage": "Your ticket has been submitted. Our team will look into it.",
+    "ticketId": "Ticket ID",
+    "charCount": "{current}/{max}",
+    "listTitle": "Support Tickets",
+    "colTitle": "Title",
+    "colSeverity": "Severity",
+    "colStatus": "Status",
+    "colSubmittedBy": "Submitted By",
+    "colDate": "Date",
+    "severityLow": "Low",
+    "severityMedium": "Medium",
+    "severityHigh": "High",
+    "statusOpen": "Open",
+    "statusInProgress": "In Progress",
+    "statusResolved": "Resolved",
+    "rawInput": "Raw User Input",
+    "description": "Description",
+    "stepsToReproduce": "Steps to Reproduce",
+    "updateStatus": "Update Status"
   }
 }

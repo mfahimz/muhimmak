@@ -1221,3 +1221,76 @@ export async function trackReviewQrShown(request: Request): Promise<NextResponse
   }
 }
 
+// ---------------------------------------------------------------------------
+// deleteSession — Delete a session and its related data (super_admin / ceo only)
+// ---------------------------------------------------------------------------
+export async function deleteSession(
+  _request: Request,
+  sessionId: string
+): Promise<NextResponse> {
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const admin = createAdminClient();
+
+    const { data: profile } = await admin
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .single();
+
+    const role = profile?.role;
+    if (role !== 'super_admin' && role !== 'ceo') {
+      return NextResponse.json(
+        { error: 'Forbidden — insufficient permissions' },
+        { status: 403 }
+      );
+    }
+
+    // Verify session exists
+    const { data: session, error: sessionError } = await admin
+      .from('sessions')
+      .select('id')
+      .eq('id', sessionId)
+      .single();
+
+    if (sessionError || !session) {
+      return NextResponse.json({ error: 'Session not found' }, { status: 404 });
+    }
+
+    // Delete related rows first (responses and visit_closures have ON DELETE CASCADE,
+    // but we delete explicitly for defense-in-depth against misconfigured constraints)
+    await admin.from('responses').delete().eq('session_id', sessionId);
+    await admin.from('visit_closures').delete().eq('session_id', sessionId);
+
+    // Delete the session itself
+    const { error: deleteError } = await admin
+      .from('sessions')
+      .delete()
+      .eq('id', sessionId);
+
+    if (deleteError) throw deleteError;
+
+    const ip = getClientIp(_request);
+    await writeAuditLog({
+      actorId: user.id,
+      action: 'session_deleted',
+      ipAddress: ip,
+      metadata: { sessionId, deletedBy: role },
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (err: any) {
+    console.error('Session deletion error:', err);
+    return NextResponse.json({ error: err.message || err }, { status: 500 });
+  }
+}
+

@@ -7,6 +7,18 @@ import { toArabicNumerals } from "@/lib/utils/arabic-numerals"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
+import { toast } from "sonner"
+import {
   Calendar,
   Filter,
   ArrowLeft,
@@ -24,6 +36,8 @@ import {
   ChevronRight,
   FileText,
   Lock,
+  Trash2,
+  Loader2,
 } from "lucide-react"
 import { PendingClosuresClient, type PendingClosureItem } from "../pending-closures/PendingClosuresClient"
 
@@ -87,6 +101,33 @@ export function SessionsListClient({
   const searchParams = useSearchParams()
   const t = useTranslations("Sessions")
   const locale = useLocale()
+
+  const canDelete = role === "super_admin" || role === "ceo"
+  const [localSessions, setLocalSessions] = React.useState(sessions)
+  const [deletingId, setDeletingId] = React.useState<string | null>(null)
+
+  // Sync local sessions with prop changes (e.g. pagination / filter changes)
+  React.useEffect(() => {
+    setLocalSessions(sessions)
+  }, [sessions])
+
+  const handleDeleteSession = async (sessionId: string) => {
+    setDeletingId(sessionId)
+    try {
+      const res = await fetch(`/api/v1/sessions/${sessionId}`, { method: "DELETE" })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || "Failed to delete session")
+      }
+      setLocalSessions((prev) => prev.filter((s) => s.id !== sessionId))
+      toast.success("Session deleted successfully")
+    } catch (err: any) {
+      console.error("Delete session error:", err)
+      toast.error(err.message || "Failed to delete session")
+    } finally {
+      setDeletingId(null)
+    }
+  }
 
   const [activeTab, setActiveTab] = React.useState<"all" | "open-visits">(
     initialTab === "open-visits" ? "open-visits" : "all"
@@ -216,7 +257,7 @@ export function SessionsListClient({
 
   // Filter client-side by statusVal and instant search query
   const filteredSessions = React.useMemo(() => {
-    return sessions.filter((s) => {
+    return localSessions.filter((s) => {
       if (statusVal) {
         if (statusVal === "abandoned") {
           if (s.status !== "abandoned" && s.status !== "started") return false
@@ -238,7 +279,7 @@ export function SessionsListClient({
 
       return true
     })
-  }, [sessions, statusVal, searchQuery])
+  }, [localSessions, statusVal, searchQuery])
 
   const formatDateTime = (dateStr: string | null) => {
     if (!dateStr) return "—"
@@ -863,25 +904,62 @@ export function SessionsListClient({
 
                           {/* Explicit View Details Action */}
                           <td className="px-6 py-4 text-end whitespace-nowrap">
-                            {role === "receptionist" ? (
-                              <span className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground/60 select-none">
-                                <Lock className="size-3.5" />
-                                <span>{t("btnViewDetails")}</span>
-                              </span>
-                            ) : (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  router.push(`/dashboard/sessions/${session.id}`)
-                                }}
-                                className="h-8 px-3 text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 rounded-xl group-hover:translate-x-0.5 transition-all gap-1"
-                              >
-                                <span>{t("btnViewDetails")}</span>
-                                <ChevronRight className="size-3.5" />
-                              </Button>
-                            )}
+                            <div className="inline-flex items-center gap-1">
+                              {canDelete && (
+                                <AlertDialog>
+                                  <AlertDialogTrigger
+                                    disabled={deletingId === session.id}
+                                    onClick={(e: React.MouseEvent) => e.stopPropagation()}
+                                    className="inline-flex items-center justify-center h-8 w-8 p-0 text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded-xl transition-all cursor-pointer disabled:opacity-50 disabled:pointer-events-none"
+                                  >
+                                    {deletingId === session.id ? (
+                                      <Loader2 className="size-3.5 animate-spin" />
+                                    ) : (
+                                      <Trash2 className="size-3.5" />
+                                    )}
+                                  </AlertDialogTrigger>
+                                  <AlertDialogContent onClick={(e) => e.stopPropagation()}>
+                                    <AlertDialogHeader>
+                                      <AlertDialogTitle>Delete this session?</AlertDialogTitle>
+                                      <AlertDialogDescription>
+                                        This will permanently delete the session and all its responses. This cannot be undone.
+                                      </AlertDialogDescription>
+                                    </AlertDialogHeader>
+                                    <AlertDialogFooter>
+                                      <AlertDialogCancel className="rounded-xl">Cancel</AlertDialogCancel>
+                                      <AlertDialogAction
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          handleDeleteSession(session.id)
+                                        }}
+                                        className="bg-rose-600 hover:bg-rose-700 text-white rounded-xl"
+                                      >
+                                        Delete
+                                      </AlertDialogAction>
+                                    </AlertDialogFooter>
+                                  </AlertDialogContent>
+                                </AlertDialog>
+                              )}
+                              {role === "receptionist" ? (
+                                <span className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground/60 select-none">
+                                  <Lock className="size-3.5" />
+                                  <span>{t("btnViewDetails")}</span>
+                                </span>
+                              ) : (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    router.push(`/dashboard/sessions/${session.id}`)
+                                  }}
+                                  className="h-8 px-3 text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 rounded-xl group-hover:translate-x-0.5 transition-all gap-1"
+                                >
+                                  <span>{t("btnViewDetails")}</span>
+                                  <ChevronRight className="size-3.5" />
+                                </Button>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       )
