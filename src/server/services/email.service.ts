@@ -7,6 +7,7 @@ import {
   dailySummaryEmail,
   weeklySummaryEmail,
 } from '@/server/lib/email-templates';
+import { computeWeightedScore } from '@/server/services/sessions.service';
 
 async function resolveRecipientEmails(recipientProfileIds: string[]): Promise<string[]> {
   if (!recipientProfileIds || recipientProfileIds.length === 0) return [];
@@ -148,21 +149,64 @@ export async function sendDailySummary(): Promise<void> {
 
     const { data: sessions } = await admin
       .from('sessions')
-      .select('id, status')
+      .select('id, form_id, status')
       .gte('created_at', startOfDay)
       .lte('created_at', endOfDay);
 
     const total = sessions?.length ?? 0;
-    const completed = sessions?.filter((s) => s.status === 'completed').length ?? 0;
+    const completedSessions = (sessions ?? []).filter((s) => s.status === 'completed');
+    const completed = completedSessions.length;
 
-    const { data: responses } = await admin
-      .from('responses')
-      .select('ai_text_score')
-      .in('session_id', (sessions ?? []).map((s) => s.id));
+    const completedIds = completedSessions.map((s) => s.id);
 
-    const scores = (responses ?? [])
-      .map((r) => r.ai_text_score)
-      .filter((s): s is number => s !== null);
+    const { data: responses } = completedIds.length > 0
+      ? await admin
+          .from('responses')
+          .select('session_id, answers')
+          .in('session_id', completedIds)
+      : { data: [] };
+
+    const responseMap = new Map<string, Record<string, any>>();
+    (responses ?? []).forEach((r) => {
+      responseMap.set(r.session_id, r.answers || {});
+    });
+
+    const formIds = Array.from(new Set(completedSessions.map((s) => s.form_id).filter(Boolean)));
+    const { data: forms } = formIds.length > 0
+      ? await admin
+          .from('forms')
+          .select('id, fields')
+          .in('id', formIds)
+      : { data: [] };
+
+    const formMap = new Map<string, any[]>();
+    (forms ?? []).forEach((f) => {
+      formMap.set(f.id, Array.isArray(f.fields) ? f.fields : []);
+    });
+
+    const scores: number[] = [];
+
+    for (const s of completedSessions) {
+      const answers = responseMap.get(s.id);
+      if (!answers) continue;
+
+      const fields = formMap.get(s.form_id);
+      if (!fields) continue;
+
+      const scoreable = fields.filter(
+        (f) => f.type === 'star_rating' || f.type === 'multiple_choice' || f.type === 'text' || f.type === 'numeric_scale'
+      );
+      const totalWeightAssigned = scoreable.reduce((sum, f) => {
+        const answer = answers[f.id];
+        return answer !== undefined && answer !== null ? sum + (f.weight || 0) : sum;
+      }, 0);
+
+      if (totalWeightAssigned > 0) {
+        const textScores = answers._textScores || {};
+        const { finalScore } = computeWeightedScore(fields, answers, textScores);
+        scores.push(finalScore);
+      }
+    }
 
     const avgScore =
       scores.length > 0
@@ -176,7 +220,7 @@ export async function sendDailySummary(): Promise<void> {
       .single();
 
     const threshold = alertSetting?.threshold_percent ?? 50;
-    const lowScoreCount = scores.filter((s) => s < threshold).length;
+    const lowScoreCount = scores.filter((s) => Math.round(s) < threshold).length;
 
     const narrativeHtml = await generateEmailNarrative('daily_summary', {
       totalSessions: total,
@@ -242,21 +286,64 @@ export async function sendWeeklySummary(): Promise<void> {
 
     const { data: sessions } = await admin
       .from('sessions')
-      .select('id, status')
+      .select('id, form_id, status')
       .gte('created_at', startStr)
       .lte('created_at', endStr);
 
     const total = sessions?.length ?? 0;
-    const completed = sessions?.filter((s) => s.status === 'completed').length ?? 0;
+    const completedSessions = (sessions ?? []).filter((s) => s.status === 'completed');
+    const completed = completedSessions.length;
 
-    const { data: responses } = await admin
-      .from('responses')
-      .select('ai_text_score')
-      .in('session_id', (sessions ?? []).map((s) => s.id));
+    const completedIds = completedSessions.map((s) => s.id);
 
-    const scores = (responses ?? [])
-      .map((r) => r.ai_text_score)
-      .filter((s): s is number => s !== null);
+    const { data: responses } = completedIds.length > 0
+      ? await admin
+          .from('responses')
+          .select('session_id, answers')
+          .in('session_id', completedIds)
+      : { data: [] };
+
+    const responseMap = new Map<string, Record<string, any>>();
+    (responses ?? []).forEach((r) => {
+      responseMap.set(r.session_id, r.answers || {});
+    });
+
+    const formIds = Array.from(new Set(completedSessions.map((s) => s.form_id).filter(Boolean)));
+    const { data: forms } = formIds.length > 0
+      ? await admin
+          .from('forms')
+          .select('id, fields')
+          .in('id', formIds)
+      : { data: [] };
+
+    const formMap = new Map<string, any[]>();
+    (forms ?? []).forEach((f) => {
+      formMap.set(f.id, Array.isArray(f.fields) ? f.fields : []);
+    });
+
+    const scores: number[] = [];
+
+    for (const s of completedSessions) {
+      const answers = responseMap.get(s.id);
+      if (!answers) continue;
+
+      const fields = formMap.get(s.form_id);
+      if (!fields) continue;
+
+      const scoreable = fields.filter(
+        (f) => f.type === 'star_rating' || f.type === 'multiple_choice' || f.type === 'text' || f.type === 'numeric_scale'
+      );
+      const totalWeightAssigned = scoreable.reduce((sum, f) => {
+        const answer = answers[f.id];
+        return answer !== undefined && answer !== null ? sum + (f.weight || 0) : sum;
+      }, 0);
+
+      if (totalWeightAssigned > 0) {
+        const textScores = answers._textScores || {};
+        const { finalScore } = computeWeightedScore(fields, answers, textScores);
+        scores.push(finalScore);
+      }
+    }
 
     const avgScore =
       scores.length > 0
@@ -270,7 +357,7 @@ export async function sendWeeklySummary(): Promise<void> {
       .single();
 
     const threshold = alertSetting?.threshold_percent ?? 50;
-    const lowScoreCount = scores.filter((s) => s < threshold).length;
+    const lowScoreCount = scores.filter((s) => Math.round(s) < threshold).length;
 
     const formatDate = (d: Date) =>
       d.toLocaleDateString('en-AE', {
@@ -306,3 +393,4 @@ export async function sendWeeklySummary(): Promise<void> {
     console.error('[email] sendWeeklySummary failed:', err);
   }
 }
+

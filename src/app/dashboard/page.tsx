@@ -14,7 +14,7 @@ import {
   UserCheck2Icon,
 } from "lucide-react"
 import Link from "next/link"
-import { computeReceptionistImpact } from "@/server/services/sessions.service"
+import { computeReceptionistImpact, computeWeightedScore } from "@/server/services/sessions.service"
 import ReceptionistImpactCard from "@/components/dashboard/ReceptionistImpactCard"
 import ReceptionistImpactSelector from "@/components/dashboard/ReceptionistImpactSelector"
 
@@ -62,7 +62,7 @@ export default async function Page() {
   let fullMetrics = {
     sessionsToday: "0" as string | number,
     refusalsToday: "0" as string | number,
-    totalFeedback: "—",
+    totalFeedback: "—" as string | number,
     avgScore: "—",
   }
   let byUserRows: { receptionist: string; sessionsCount: number; avgScore: string }[] | null = []
@@ -115,8 +115,83 @@ export default async function Page() {
       fullMetrics.sessionsToday = sError ? t("unableToLoad") : (sessionsToday ?? 0)
       fullMetrics.refusalsToday = rError ? t("unableToLoad") : (refusalsToday ?? 0)
 
-      fullMetrics.totalFeedback = "—"
-      fullMetrics.avgScore = "—"
+      // Query completed sessions today for Total Feedback Score & Average Score
+      const { data: completedSessionsToday } = await supabase
+        .from("sessions")
+        .select("id, form_id")
+        .eq("status", "completed")
+        .gte("started_at", startOfTodayISO)
+
+      const completedSessions = completedSessionsToday || []
+      const completedCount = completedSessions.length
+      fullMetrics.totalFeedback = completedCount
+
+      if (completedCount > 0) {
+        const completedIds = completedSessions.map((s) => s.id)
+        const formIds = Array.from(
+          new Set(completedSessions.map((s) => s.form_id).filter(Boolean))
+        )
+
+        const [{ data: responses }, { data: forms }] = await Promise.all([
+          supabase
+            .from("responses")
+            .select("session_id, answers")
+            .in("session_id", completedIds),
+          supabase
+            .from("forms")
+            .select("id, fields")
+            .in("id", formIds),
+        ])
+
+        const responseMap = new Map<string, Record<string, any>>()
+        ;(responses || []).forEach((r: any) => {
+          responseMap.set(r.session_id, r.answers || {})
+        })
+
+        const formMap = new Map<string, any[]>()
+        ;(forms || []).forEach((f: any) => {
+          formMap.set(f.id, Array.isArray(f.fields) ? f.fields : [])
+        })
+
+        const finalScores: number[] = []
+
+        for (const s of completedSessions) {
+          const answers = responseMap.get(s.id)
+          if (!answers) continue
+
+          const fields = formMap.get(s.form_id)
+          if (!fields) continue
+
+          const scoreable = fields.filter(
+            (f: any) =>
+              f.type === "star_rating" ||
+              f.type === "multiple_choice" ||
+              f.type === "text" ||
+              f.type === "numeric_scale"
+          )
+          const totalWeightAssigned = scoreable.reduce((sum: number, f: any) => {
+            const answer = answers[f.id]
+            return answer !== undefined && answer !== null ? sum + (f.weight || 0) : sum
+          }, 0)
+
+          if (totalWeightAssigned > 0) {
+            const textScores = answers._textScores || {}
+            const { finalScore } = computeWeightedScore(fields, answers, textScores)
+            finalScores.push(finalScore)
+          }
+        }
+
+        if (finalScores.length > 0) {
+          const meanScore = Math.round(
+            finalScores.reduce((acc, curr) => acc + curr, 0) / finalScores.length
+          )
+          fullMetrics.avgScore = `${meanScore}%`
+        } else {
+          fullMetrics.avgScore = "—"
+        }
+      } else {
+        fullMetrics.avgScore = "—"
+      }
 
       // Query sessions + profiles for By User table aggregation
       const { data: sessionsData, error: sessionsError } = await supabase
@@ -140,6 +215,7 @@ export default async function Page() {
           userMap[creatorId].count++
         })
 
+        // TODO: Phase 1 QR sessions have no created_by user ID (public QR scans), so per-receptionist score is meaningless for now and left as "—".
         byUserRows = Object.values(userMap).map((item) => ({
           receptionist: item.name,
           sessionsCount: item.count,
