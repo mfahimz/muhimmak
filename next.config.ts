@@ -5,6 +5,9 @@ const withNextIntl = createNextIntlPlugin();
 
 const nextConfig: NextConfig = {
   /* config options here */
+  turbopack: {
+    root: __dirname,
+  },
   allowedDevOrigins: ['192.168.3.72'],
   experimental: {
     optimizePackageImports: ['lucide-react', 'recharts', '@base-ui/react', 'sonner'],

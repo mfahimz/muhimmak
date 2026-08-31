@@ -1,5 +1,5 @@
 import { Inter, IBM_Plex_Sans_Arabic } from "next/font/google";
-import NextTopLoader from "nextjs-toploader";
+import { TopLoader } from "@/components/TopLoader";
 import { getLocale, getMessages, getTranslations } from "next-intl/server";
 import { NextIntlClientProvider } from "next-intl";
 import { Toaster } from "@/components/ui/sonner";
@@ -39,11 +39,7 @@ export default async function RootLayout({
       className={locale === "ar" ? ibmPlexArabic.variable : inter.variable}
     >
       <body className="min-h-full flex flex-col">
-        <NextTopLoader
-          color="#4F46E5"
-          height={3}
-          showSpinner={false}
-        />
+        <TopLoader />
         <NextIntlClientProvider messages={messages} locale={locale}>
           {children}
         </NextIntlClientProvider>
