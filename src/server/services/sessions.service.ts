@@ -856,10 +856,21 @@ export async function updateSession(request: Request): Promise<NextResponse> {
         updatePayload.ai_analysis_generated_at = now;
       }
 
-      const { error: updateError } = await admin
+      let { error: updateError } = await admin
         .from('sessions')
         .update(updatePayload)
         .eq('id', sessionId);
+
+      if (updateError && (updatePayload.ai_analysis_summary || updatePayload.ai_analysis_generated_at)) {
+        console.warn('[sessions.service] Retrying session update without AI summary fields due to schema cache error:', updateError.message);
+        delete updatePayload.ai_analysis_summary;
+        delete updatePayload.ai_analysis_generated_at;
+        const retryResult = await admin
+          .from('sessions')
+          .update(updatePayload)
+          .eq('id', sessionId);
+        updateError = retryResult.error;
+      }
 
       if (updateError) throw updateError;
 
