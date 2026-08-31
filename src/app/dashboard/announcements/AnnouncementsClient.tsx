@@ -3,6 +3,7 @@
 import * as React from "react"
 import { useTranslations } from "next-intl"
 import { createClient } from "@/lib/supabase/client"
+import { toast } from "sonner"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -132,9 +133,11 @@ export function AnnouncementsClient({ initialAnnouncements }: AnnouncementsClien
         .getPublicUrl(fileName)
 
       setFormData(prev => ({ ...prev, image_url: data.publicUrl }))
+      toast.success("Image uploaded successfully")
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : t("errorUploadImage")
       setFormError(msg)
+      toast.error(msg)
     } finally {
       setIsUploading(false)
     }
@@ -144,6 +147,32 @@ export function AnnouncementsClient({ initialAnnouncements }: AnnouncementsClien
     setIsSaving(true)
     setFormError(null)
     try {
+      const titleEn = formData.title_en.trim()
+      const titleAr = formData.title_ar.trim()
+      const bodyEn = formData.body_en.trim()
+      const bodyAr = formData.body_ar.trim()
+
+      if (!titleEn && !titleAr) {
+        throw new Error("Please enter an announcement title.")
+      }
+      if (!bodyEn && !bodyAr) {
+        throw new Error("Please enter an announcement body.")
+      }
+
+      const generatedSlug = (formData.slug.trim()
+        || (titleEn || titleAr).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+        || `announcement-${Date.now()}`)
+
+      const payloadToSend = {
+        slug: generatedSlug,
+        title_en: titleEn || titleAr,
+        title_ar: titleAr || titleEn,
+        body_en: bodyEn || bodyAr,
+        body_ar: bodyAr || bodyEn,
+        min_score_threshold: Number(formData.min_score_threshold) || 60,
+        image_url: formData.image_url && formData.image_url.trim() ? formData.image_url.trim() : null,
+      }
+
       const isUpdate = !!editingId
       const url = isUpdate ? `/api/v1/announcements/${editingId}` : '/api/v1/announcements'
       const method = isUpdate ? 'PATCH' : 'POST'
@@ -151,7 +180,7 @@ export function AnnouncementsClient({ initialAnnouncements }: AnnouncementsClien
       const response = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
+        body: JSON.stringify(payloadToSend)
       })
 
       const data = await response.json()
@@ -165,11 +194,13 @@ export function AnnouncementsClient({ initialAnnouncements }: AnnouncementsClien
         setAnnouncements(prev => [data.announcement, ...prev])
       }
       
+      toast.success("Announcement saved successfully")
       setIsSheetOpen(false)
       resetForm()
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : t("errorSaveAnnouncement")
       setFormError(msg)
+      toast.error(msg)
     } finally {
       setIsSaving(false)
     }
@@ -187,9 +218,11 @@ export function AnnouncementsClient({ initialAnnouncements }: AnnouncementsClien
         throw new Error(data.error || t("errorDeleteAnnouncement"))
       }
       setAnnouncements(prev => prev.filter(a => a.id !== deleteId))
+      toast.success("Announcement deleted successfully")
       setDeleteId(null)
-    } catch {
-      // Deletion handled
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : t("errorDeleteAnnouncement")
+      toast.error(msg)
     } finally {
       setIsDeleting(false)
     }
@@ -229,8 +262,10 @@ export function AnnouncementsClient({ initialAnnouncements }: AnnouncementsClien
         if (newStatus && a.id !== id) return { ...a, is_active: false }
         return a
       }))
-    } catch {
-      // Toggle error handled
+      toast.success(newStatus ? "Announcement activated" : "Announcement deactivated")
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : t("errorUpdateAnnouncement")
+      toast.error(msg)
     } finally {
       setIsToggling(false)
       setActivateWarningId(null)

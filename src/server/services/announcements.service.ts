@@ -120,9 +120,30 @@ export async function createAnnouncement(payload: AnnouncementInput) {
     }
   }
 
+  const titleEn = (payload.title_en || '').trim();
+  const titleAr = (payload.title_ar || '').trim() || titleEn;
+  const bodyEn = (payload.body_en || '').trim();
+  const bodyAr = (payload.body_ar || '').trim() || bodyEn;
+  const slug = (payload.slug || '').trim()
+    || titleEn.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+    || `announcement-${Date.now()}`;
+  const imageUrl = payload.image_url && payload.image_url.trim() !== '' ? payload.image_url.trim() : null;
+  const minScore = typeof payload.min_score_threshold === 'number' ? payload.min_score_threshold : (parseInt(String(payload.min_score_threshold), 10) || 60);
+
+  const insertPayload = {
+    slug,
+    title_en: titleEn,
+    title_ar: titleAr,
+    body_en: bodyEn,
+    body_ar: bodyAr,
+    image_url: imageUrl,
+    min_score_threshold: minScore,
+    is_active: Boolean(payload.is_active),
+  };
+
   const { data, error } = await admin
     .from('announcements')
-    .insert(payload)
+    .insert(insertPayload)
     .select()
     .single();
 
@@ -148,9 +169,30 @@ export async function updateAnnouncement(id: string, payload: AnnouncementUpdate
     }
   }
 
+  const updateData: Record<string, unknown> = {
+    updated_at: new Date().toISOString(),
+  };
+
+  if (payload.title_en !== undefined) updateData.title_en = payload.title_en.trim();
+  if (payload.title_ar !== undefined) updateData.title_ar = payload.title_ar.trim() || (payload.title_en || '').trim();
+  if (payload.body_en !== undefined) updateData.body_en = payload.body_en.trim();
+  if (payload.body_ar !== undefined) updateData.body_ar = payload.body_ar.trim() || (payload.body_en || '').trim();
+  if (payload.slug !== undefined) updateData.slug = payload.slug.trim();
+  if (payload.min_score_threshold !== undefined) {
+    updateData.min_score_threshold = typeof payload.min_score_threshold === 'number'
+      ? payload.min_score_threshold
+      : (parseInt(String(payload.min_score_threshold), 10) || 60);
+  }
+  if (payload.image_url !== undefined) {
+    updateData.image_url = payload.image_url && payload.image_url.trim() !== '' ? payload.image_url.trim() : null;
+  }
+  if (payload.is_active !== undefined) {
+    updateData.is_active = Boolean(payload.is_active);
+  }
+
   const { data, error } = await admin
     .from('announcements')
-    .update({ ...payload, updated_at: new Date().toISOString() })
+    .update(updateData)
     .eq('id', id)
     .select()
     .single();
