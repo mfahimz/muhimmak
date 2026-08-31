@@ -887,6 +887,7 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
                 title_ar={announcement.title_ar}
                 body_en={announcement.body_en}
                 body_ar={announcement.body_ar}
+                imageUrl={announcement.image_url}
                 isArabic={isArabic}
               />
             ) : (

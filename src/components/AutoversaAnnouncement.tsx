@@ -9,10 +9,11 @@ interface AutoversaAnnouncementProps {
   title_ar: string
   body_en: string
   body_ar: string
+  imageUrl?: string | null
   isArabic: boolean
 }
 
-export function AutoversaAnnouncement({ title_en, title_ar, body_en, body_ar, isArabic }: AutoversaAnnouncementProps) {
+export function AutoversaAnnouncement({ title_en, title_ar, body_en, body_ar, imageUrl, isArabic }: AutoversaAnnouncementProps) {
   const t = useTranslations("Survey")
   const title = isArabic ? title_ar : title_en
   const body = isArabic ? body_ar : body_en
@@ -26,9 +27,16 @@ export function AutoversaAnnouncement({ title_en, title_ar, body_en, body_ar, is
         </div>
 
         <div className="relative px-8 py-10 md:px-12 md:py-12 text-center space-y-6">
-          <div className="mx-auto w-20 h-20 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 flex items-center justify-center">
-            <Car className="size-10 text-white" />
-          </div>
+          {imageUrl ? (
+            <div className="mx-auto max-w-[220px] max-h-24 p-2.5 rounded-2xl bg-white/95 shadow-lg border border-white/40 flex items-center justify-center overflow-hidden">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={imageUrl} alt="Announcement" className="max-h-16 w-auto max-w-full object-contain" />
+            </div>
+          ) : (
+            <div className="mx-auto w-20 h-20 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 flex items-center justify-center">
+              <Car className="size-10 text-white" />
+            </div>
+          )}
 
           <div className="space-y-2">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/20 border border-blue-400/30 text-blue-300 text-xs font-semibold uppercase tracking-wider">
