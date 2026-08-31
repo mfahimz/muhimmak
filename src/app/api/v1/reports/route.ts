@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { computeReportsData } from '@/server/services/reports.service';
+import { computeReportsData, getOrGenerateReportInsights } from '@/server/services/reports.service';
 
 export async function GET(request: Request) {
   try {
@@ -36,9 +36,9 @@ export async function GET(request: Request) {
     const startDate = searchParams.get('startDate') || '';
     const endDate = searchParams.get('endDate') || '';
 
-    const reportsData = await computeReportsData(startDate, endDate);
+    const [reportsData, insights] = await Promise.all([computeReportsData(startDate, endDate), getOrGenerateReportInsights(startDate, endDate)]);
 
-    return NextResponse.json({ data: reportsData });
+    return NextResponse.json({ data: reportsData, insights });
   } catch (err: any) {
     console.error('[reports api] Error:', err);
     return NextResponse.json(

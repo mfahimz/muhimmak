@@ -74,6 +74,9 @@ export function EditFormClient({ userId, form }: EditFormClientProps) {
     const supabase = createClient()
 
     try {
+      const domainResponse = await fetch("/api/v1/forms/infer-domains", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fields }) })
+      if (!domainResponse.ok) throw new Error("Could not infer question domains")
+      const { fields: fieldsWithDomains } = await domainResponse.json()
       // Step 3 Versioning Check: Check again right before saving to be absolutely consistent
       const { count, error: countErr } = await supabase
         .from("responses")
@@ -100,7 +103,7 @@ export function EditFormClient({ userId, form }: EditFormClientProps) {
           .insert({
             name,
             description,
-            fields,
+            fields: fieldsWithDomains,
             name_ar: nameAr,
             description_ar: descriptionAr,
             is_visit_journey: isVisitJourney,
@@ -120,7 +123,7 @@ export function EditFormClient({ userId, form }: EditFormClientProps) {
           .update({
             name,
             description,
-            fields,
+            fields: fieldsWithDomains,
             name_ar: nameAr,
             description_ar: descriptionAr,
             is_visit_journey: isVisitJourney,

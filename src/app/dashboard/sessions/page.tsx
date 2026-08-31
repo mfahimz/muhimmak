@@ -82,16 +82,16 @@ export default async function SessionsPage({ searchParams }: PageProps) {
 
   // Apply date filters
   if (from) {
-    query = query.gte("started_at", `${from}T00:00:00.000Z`)
+    query = query.gte("created_at", `${from}T00:00:00.000Z`)
   }
 
   if (to) {
-    query = query.lte("started_at", `${to}T23:59:59.999Z`)
+    query = query.lte("created_at", `${to}T23:59:59.999Z`)
   }
 
   // Sorting and Pagination
   query = query
-    .order("started_at", { ascending: false })
+    .order("created_at", { ascending: false })
     .range(fromIndex, toIndex)
 
   const { data: sessionsData, error: sessionsError, count } = await query
@@ -168,10 +168,10 @@ export default async function SessionsPage({ searchParams }: PageProps) {
     .select("status")
 
   if (from) {
-    metricsQuery = metricsQuery.gte("started_at", `${from}T00:00:00.000Z`)
+    metricsQuery = metricsQuery.gte("created_at", `${from}T00:00:00.000Z`)
   }
   if (to) {
-    metricsQuery = metricsQuery.lte("started_at", `${to}T23:59:59.999Z`)
+    metricsQuery = metricsQuery.lte("created_at", `${to}T23:59:59.999Z`)
   }
 
   const { data: metricsData } = await metricsQuery

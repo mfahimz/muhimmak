@@ -39,11 +39,11 @@ export async function PATCH(
     }
 
     const { status } = body;
-    if (!['open', 'in_progress', 'resolved'].includes(status)) {
+    if (!['open', 'in_progress', 'resolved', 'closed'].includes(status)) {
       return NextResponse.json({ error: 'Invalid status value' }, { status: 400 });
     }
 
-    await updateTicketStatus(id, status);
+    await updateTicketStatus(id, status, user.id);
 
     return NextResponse.json({ success: true });
   } catch (err: any) {

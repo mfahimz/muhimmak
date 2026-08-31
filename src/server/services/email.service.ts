@@ -8,6 +8,7 @@ import {
   weeklySummaryEmail,
 } from '@/server/lib/email-templates';
 import { computeWeightedScore } from '@/server/services/sessions.service';
+import { DEFAULT_LOW_SATISFACTION_THRESHOLD } from '@/lib/constants';
 
 async function resolveRecipientEmails(recipientProfileIds: string[]): Promise<string[]> {
   if (!recipientProfileIds || recipientProfileIds.length === 0) return [];
@@ -84,21 +85,21 @@ export async function sendLowSatisfactionAlert(data: {
 
     if (!notifSetting?.enabled) return;
     if (!notifSetting.recipient_profile_ids?.length) return;
-    if (data.score >= (notifSetting.threshold_percent ?? 50)) return;
+    if (data.score >= (notifSetting.threshold_percent ?? DEFAULT_LOW_SATISFACTION_THRESHOLD)) return;
 
     const recipientEmails = await resolveRecipientEmails(notifSetting.recipient_profile_ids);
     if (!recipientEmails.length) return;
 
     const narrativeHtml = await generateEmailNarrative('low_satisfaction_alert', {
       score: data.score,
-      threshold: notifSetting.threshold_percent ?? 50,
+      threshold: notifSetting.threshold_percent ?? DEFAULT_LOW_SATISFACTION_THRESHOLD,
       formName: data.formName,
     });
 
     const { subject, html } = lowSatisfactionAlertEmail({
       sessionId: data.sessionId,
       score: data.score,
-      threshold: notifSetting.threshold_percent ?? 50,
+      threshold: notifSetting.threshold_percent ?? DEFAULT_LOW_SATISFACTION_THRESHOLD,
       formName: data.formName,
       date: new Date().toLocaleDateString('en-AE', {
         day: 'numeric',
@@ -219,7 +220,7 @@ export async function sendDailySummary(): Promise<void> {
       .eq('event_type', 'low_satisfaction_alert')
       .single();
 
-    const threshold = alertSetting?.threshold_percent ?? 50;
+    const threshold = alertSetting?.threshold_percent ?? DEFAULT_LOW_SATISFACTION_THRESHOLD;
     const lowScoreCount = scores.filter((s) => Math.round(s) < threshold).length;
 
     const narrativeHtml = await generateEmailNarrative('daily_summary', {
@@ -356,7 +357,7 @@ export async function sendWeeklySummary(): Promise<void> {
       .eq('event_type', 'low_satisfaction_alert')
       .single();
 
-    const threshold = alertSetting?.threshold_percent ?? 50;
+    const threshold = alertSetting?.threshold_percent ?? DEFAULT_LOW_SATISFACTION_THRESHOLD;
     const lowScoreCount = scores.filter((s) => Math.round(s) < threshold).length;
 
     const formatDate = (d: Date) =>

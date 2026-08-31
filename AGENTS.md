@@ -88,6 +88,8 @@ export async function POST(request: Request) {
   node scripts/translate-messages.js
   ```
   *(Note: Requires `DEEPSEEK_API_KEY` in `.env.local`)*
+
+  For customer-facing copy (announcements, form questions, anything a customer reads) — auto-translation via this script is a first draft only. Get a human Arabic reviewer to check it before it goes live. Internal admin/dashboard UI strings can rely on the script alone.
 - **Completeness Verification**: Verify translation key parity by running:
   ```bash
   node scripts/check-arabic-completeness.js
@@ -102,9 +104,10 @@ export async function POST(request: Request) {
 - **Row Level Security (RLS)**: Mandatory on ALL public tables (`alter table public.<table_name> enable row level security;`).
 - **Permission Checking**: Security policies should invoke `has_permission(resource_id, action)` rather than hardcoding role strings where applicable.
 - **Mandatory Table Grants**: Every SQL table creation or alteration **MUST** conclude with explicit GRANT statements for both roles:
+  Grant only what authenticated actually needs based on existing RLS policies and UI at time of writing — don't default to full CRUD. If only a SELECT policy exists, only grant select. Add insert/update/delete grants when the corresponding policy and UI action actually exist. service_role always gets grant all regardless.
   ```sql
   alter table public.<table_name> enable row level security;
-  grant select, insert, update, delete on public.<table_name> to authenticated;
+  grant select on public.<table_name> to authenticated; -- (Add insert/update/delete as needed)
   grant all on public.<table_name> to service_role;
   ```
 - **Role-Based Access Control (RBAC)**: Supported roles in `profiles` table: `super_admin`, `ceo`, `agm`, `manager`, `receptionist`.

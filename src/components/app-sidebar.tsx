@@ -30,6 +30,7 @@ import {
   QrCode,
   LifeBuoy,
   Inbox,
+  Megaphone,
 } from "lucide-react"
 
 interface NavItem {
@@ -99,6 +100,12 @@ const NAV_GROUPS: NavGroup[] = [
         title: "Team",
         url: "/dashboard/users",
         icon: Users,
+        roles: ["super_admin", "ceo"],
+      },
+      {
+        title: "Announcements",
+        url: "/dashboard/announcements",
+        icon: Megaphone,
         roles: ["super_admin", "ceo"],
       },
     ],

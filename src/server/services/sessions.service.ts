@@ -1,6 +1,5 @@
 import 'server-only';
 import { NextResponse } from 'next/server';
-import OpenAI from 'openai';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { writeAuditLog, getClientIp } from '@/lib/audit/log';
@@ -8,12 +7,9 @@ import { checkRateLimit } from '@/lib/rate-limit';
 import { sendLowSatisfactionAlert } from '@/server/services/email.service';
 import { createNotification } from '@/server/services/notifications-center.service';
 import { encryptPlate, hashPlate } from '@/lib/utils/plate-number';
-
-const deepseek = new OpenAI({
-  apiKey: process.env.DEEPSEEK_API_KEY || '',
-  baseURL: 'https://api.deepseek.com',
-});
-const DEEPSEEK_MODEL = 'deepseek-v4-flash';
+import { DEFAULT_LOW_SATISFACTION_THRESHOLD } from '@/lib/constants';
+import { deepseek, DEEPSEEK_MODEL } from '@/server/lib/deepseek';
+import { getActiveAnnouncementForSession, type AnnouncementForRender } from '@/server/services/announcements.service';
 
 // ---------------------------------------------------------------------------
 // Helper — weighted score calculation (used by completed + rescore + reports)
@@ -696,6 +692,7 @@ export async function updateSession(request: Request): Promise<NextResponse> {
     if (action === 'completed' || action === 'abandoned') {
       const finalStatus = action === 'completed' ? 'completed' : 'abandoned';
       let showQr = false;
+      let announcement: AnnouncementForRender | null = null;
 
       if (answers) {
         const { data: form } = await admin
@@ -767,6 +764,14 @@ export async function updateSession(request: Request): Promise<NextResponse> {
           }
 
           if (!isPendingScoring) {
+            announcement = await getActiveAnnouncementForSession(
+              session.id,
+              session.plate_number_hash,
+              finalScore
+            );
+          }
+
+          if (!isPendingScoring) {
             const formNameResult = await admin
               .from('forms')
               .select('name')
@@ -786,7 +791,7 @@ export async function updateSession(request: Request): Promise<NextResponse> {
               .single();
 
             const roundedScore = Math.round(finalScore);
-            if (notifSetting?.enabled && roundedScore < (notifSetting?.threshold_percent ?? 50)) {
+            if (notifSetting?.enabled && roundedScore < (notifSetting?.threshold_percent ?? DEFAULT_LOW_SATISFACTION_THRESHOLD)) {
               await createNotification({
                 recipientRole: ['super_admin', 'ceo', 'agm', 'manager'],
                 type: 'low_satisfaction',
@@ -799,13 +804,61 @@ export async function updateSession(request: Request): Promise<NextResponse> {
         }
       }
 
+      let aiSummaryText: string | null = null;
+      if (action === 'completed' && !session.ai_analysis_summary && answers && Object.keys(answers).length > 0) {
+        try {
+          const { data: formForAi } = await admin
+            .from('forms')
+            .select('fields')
+            .eq('id', session.form_id)
+            .single();
+          const fieldsForAi = Array.isArray(formForAi?.fields) ? (formForAi.fields as any[]) : [];
+
+          const { data: facSettings } = await admin
+            .from('facility_settings')
+            .select('ai_business_context')
+            .eq('id', '00000000-0000-0000-0000-000000000000')
+            .single();
+
+          const answerText = fieldsForAi
+            .filter((f: any) => answers[f.id] !== undefined && answers[f.id] !== null)
+            .map((f: any) => `Q: ${f.label}\nA: ${answers[f.id]}`)
+            .join('\n\n');
+
+          if (answerText.trim() && process.env.DEEPSEEK_API_KEY) {
+            const systemContext = facSettings?.ai_business_context || 'You are an analyst reviewing customer feedback for Al Maraghi Motors, a UAE automotive service facility.';
+            const completion = await deepseek.chat.completions.create({
+              model: DEEPSEEK_MODEL,
+              temperature: 0.4,
+              messages: [
+                { role: 'system', content: systemContext },
+                {
+                  role: 'user',
+                  content: `Analyze this customer feedback and write a concise 3-4 sentence professional summary. Highlight the key sentiment, any standout positives, any concerns, and an overall impression. Write in English as plain text — no bullet points, no headings, no markdown.\n\n${answerText}`,
+                },
+              ],
+            });
+            aiSummaryText = completion.choices?.[0]?.message?.content?.trim() || null;
+          }
+        } catch (aiErr) {
+          console.error('[sessions.service] AI summary generation on completion failed:', aiErr);
+        }
+      }
+
+      const updatePayload: Record<string, any> = {
+        status: finalStatus,
+        completed_at: action === 'completed' ? now : null,
+        updated_at: now,
+      };
+
+      if (aiSummaryText) {
+        updatePayload.ai_analysis_summary = aiSummaryText;
+        updatePayload.ai_analysis_generated_at = now;
+      }
+
       const { error: updateError } = await admin
         .from('sessions')
-        .update({
-          status: finalStatus,
-          completed_at: action === 'completed' ? now : null,
-          updated_at: now,
-        })
+        .update(updatePayload)
         .eq('id', sessionId);
 
       if (updateError) throw updateError;
@@ -817,7 +870,7 @@ export async function updateSession(request: Request): Promise<NextResponse> {
         metadata: { sessionId, finalStatus },
       });
 
-      const response = NextResponse.json({ success: true, showQr });
+      const response = NextResponse.json({ success: true, showQr, announcement: announcement ?? null });
       response.cookies.delete('NEXT_LOCALE');
       return response;
     }

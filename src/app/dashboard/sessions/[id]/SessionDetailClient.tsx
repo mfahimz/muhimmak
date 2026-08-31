@@ -603,7 +603,9 @@ export default function SessionDetailClient({
                   <p className="text-xs text-muted-foreground mt-0.5">
                     {visitScoreDetails?.isLinked
                       ? `Blended score averaging Drop-off (${visitScoreDetails.ownScore ?? visitScoreDetails.partnerScore}%) and Pick-up (${visitScoreDetails.partnerScore ?? visitScoreDetails.ownScore}%) stages.`
-                      : displayScore >= threshold && session.visit_stage !== "drop_off"
+                      : session.visit_stage === "drop_off"
+                      ? t("notApplicableDropOff")
+                      : displayScore >= threshold
                       ? t("aboveThreshold")
                       : t("belowThreshold")}
                   </p>

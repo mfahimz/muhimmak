@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { deepseek, DEEPSEEK_MODEL } from '@/server/lib/deepseek';
+import { QUESTION_DOMAINS, isQuestionDomain, type QuestionDomain } from '@/lib/forms/domain';
 
 const ALLOWED_ROLES = ['super_admin', 'ceo', 'agm'];
 const FACILITY_ID = '00000000-0000-0000-0000-000000000000';
@@ -81,6 +82,37 @@ async function callDeepSeekWithRetry(
     await new Promise((resolve) => setTimeout(resolve, 1000));
     return await makeCall();
   }
+}
+
+export async function inferQuestionDomain(label: string, type: string): Promise<QuestionDomain> {
+  const fallback: QuestionDomain = 'other';
+  if (!process.env.DEEPSEEK_API_KEY) return fallback;
+  const makeCall = async () => deepseek.chat.completions.create({
+    model: DEEPSEEK_MODEL,
+    temperature: 0.2,
+    thinking: { type: 'disabled' },
+    response_format: { type: 'json_object' },
+    messages: [
+      { role: 'system', content: `Classify survey questions into exactly one domain. Valid domains: ${QUESTION_DOMAINS.join(', ')}. Return only JSON: {"domain":"..."}.` },
+      { role: 'user', content: `Question type: ${type}\nQuestion label: ${label}` },
+    ],
+  } as any);
+  try {
+    let completion;
+    try { completion = await makeCall(); } catch { await new Promise((resolve) => setTimeout(resolve, 1000)); completion = await makeCall(); }
+    const parsed = JSON.parse(completion.choices?.[0]?.message?.content || '{}');
+    return isQuestionDomain(parsed.domain) ? parsed.domain : fallback;
+  } catch (error) {
+    console.error('[forms.service] question domain inference failed:', error);
+    return fallback;
+  }
+}
+
+export async function inferMissingQuestionDomains(fields: any[]): Promise<any[]> {
+  return Promise.all(fields.map(async (field) => {
+    if (isQuestionDomain(field?.domain)) return field;
+    return { ...field, domain: await inferQuestionDomain(String(field?.label || ''), String(field?.type || '')) };
+  }));
 }
 
 // ---------------------------------------------------------------------------
@@ -704,4 +736,3 @@ Constraints:
     return NextResponse.json({ error: err.message || err }, { status: 500 });
   }
 }
-

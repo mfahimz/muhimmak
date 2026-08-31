@@ -193,47 +193,45 @@ export default async function Page() {
         fullMetrics.avgScore = "—"
       }
 
-      // Query sessions + profiles for By User table aggregation
-      const { data: sessionsData, error: sessionsError } = await supabase
-        .from("sessions")
-        .select("created_by, profiles:created_by ( full_name )")
+      // Query active receptionists from profiles table (same source as Team page)
+      const { data: activeReceptionists, error: staffError } = await admin
+        .from("profiles")
+        .select("id, full_name")
+        .eq("role", "receptionist")
+        .eq("is_active", true)
+        .order("full_name", { ascending: true })
 
-      if (sessionsError) {
+      if (staffError) {
         byUserRows = null
-      } else if (sessionsData) {
-        const userMap: Record<string, { name: string; count: number }> = {}
-        sessionsData.forEach((s: any) => {
-          const creatorId = s.created_by
-          if (!creatorId) return
-          const pName = Array.isArray(s.profiles)
-            ? s.profiles[0]?.full_name
-            : s.profiles?.full_name
-          const name = pName || t("unknownStaff")
-          if (!userMap[creatorId]) {
-            userMap[creatorId] = { name, count: 0 }
+      } else {
+        const receptionists = activeReceptionists || []
+
+        // Query sessions to compute per-receptionist counts
+        const { data: sessionsData } = await supabase
+          .from("sessions")
+          .select("created_by")
+
+        const sessionCounts: Record<string, number> = {}
+        ;(sessionsData || []).forEach((s: any) => {
+          if (s.created_by) {
+            sessionCounts[s.created_by] = (sessionCounts[s.created_by] || 0) + 1
           }
-          userMap[creatorId].count++
         })
 
-        // TODO: Phase 1 QR sessions have no created_by user ID (public QR scans), so per-receptionist score is meaningless for now and left as "—".
-        byUserRows = Object.values(userMap).map((item) => ({
-          receptionist: item.name,
-          sessionsCount: item.count,
+        // Left-join session counts onto all active receptionists
+        byUserRows = receptionists.map((rec) => ({
+          receptionist: rec.full_name || t("unknownStaff"),
+          sessionsCount: sessionCounts[rec.id] || 0,
           avgScore: "—",
         }))
-      }
 
-      // If user is super_admin or ceo, fetch receptionists list for dropdown selector
-      if (isSuperAdminOrCeo) {
-        const { data: staffData } = await admin
-          .from("staff_directory")
-          .select("id, full_name, role")
-          .eq("role", "receptionist")
-
-        receptionistsList = (staffData || []).map((s) => ({
-          id: s.id,
-          full_name: s.full_name || t("unknownStaff"),
-        }))
+        // Populate receptionistsList for super_admin and ceo dropdown selector
+        if (isSuperAdminOrCeo) {
+          receptionistsList = receptionists.map((s) => ({
+            id: s.id,
+            full_name: s.full_name || t("unknownStaff"),
+          }))
+        }
       }
     } catch (err) {
       console.error("Failed to query full metrics:", err)

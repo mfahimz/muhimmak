@@ -31,13 +31,14 @@ import {
 } from "lucide-react";
 
 import { DateRangeFilter, type PresetType } from "@/components/dashboard/DateRangeFilter";
-import type { ReportsData } from "@/server/services/reports.service";
+import type { ReportsData, ReportInsights } from "@/server/services/reports.service";
 import { toArabicNumerals } from "@/lib/utils/arabic-numerals";
 
 interface ReportsClientProps {
   initialData: ReportsData;
   initialStartDate: string;
   initialEndDate: string;
+  initialInsights: ReportInsights;
 }
 
 const BAND_COLORS = ["#ef4444", "#f59e0b", "#3b82f6", "#10b981"]; // Red, Amber, Blue, Emerald
@@ -47,6 +48,7 @@ export function ReportsClient({
   initialData,
   initialStartDate,
   initialEndDate,
+  initialInsights,
 }: ReportsClientProps) {
   const t = useTranslations("Reports");
   const locale = useLocale();
@@ -55,6 +57,7 @@ export function ReportsClient({
   const [startDate, setStartDate] = React.useState<string>(initialStartDate);
   const [endDate, setEndDate] = React.useState<string>(initialEndDate);
   const [loading, setLoading] = React.useState<boolean>(false);
+  const [insights, setInsights] = React.useState<ReportInsights>(initialInsights);
 
   const fetchReports = async (sDate: string, eDate: string) => {
     setLoading(true);
@@ -64,6 +67,7 @@ export function ReportsClient({
         const json = await res.json();
         if (json.data) {
           setData(json.data);
+          if (json.insights) setInsights(json.insights);
         }
       }
     } catch (err) {
@@ -113,6 +117,21 @@ export function ReportsClient({
         initialEndDate={initialEndDate}
         onChange={handleDateChange}
       />
+
+      <section className="rounded-2xl border border-indigo-100 dark:border-indigo-950/40 bg-card p-6 shadow-xs">
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <div><h2 className="text-lg font-bold">{t("insightsTitle")}</h2><p className="text-sm text-muted-foreground">{t("insightsSubtitle")}</p></div>
+          <span className="rounded-full bg-indigo-100 px-3 py-1 text-xs font-semibold capitalize text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300">{insights.overall.sentiment}</span>
+        </div>
+        <p className="text-sm leading-6 text-foreground">{insights.overall.summary}</p>
+        {insights.domains.length > 0 && <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
+          {insights.domains.map((item) => <div key={item.domain} className="rounded-xl border border-border bg-background/50 p-4">
+            <div className="flex items-center justify-between gap-2"><h3 className="font-semibold capitalize">{item.domain.replace(/_/g, " ")}</h3><span className="text-xs font-medium capitalize text-muted-foreground">{item.sentiment}</span></div>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">{item.summary}</p>
+            <div className="mt-3 flex gap-4 text-xs text-muted-foreground"><span>{t("mentionCount")}: {toArabicNumerals(item.mentionCount, locale)}</span>{item.themes.length > 0 && <span>{item.themes.join(" · ")}</span>}</div>
+          </div>)}
+        </div>}
+      </section>
 
       {/* Main Content Area */}
       <div className="relative min-h-[400px]">
@@ -202,7 +221,13 @@ export function ReportsClient({
                     </p>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-3 bg-background/60 rounded-xl p-3 border border-indigo-100/40 dark:border-indigo-900/20 text-xs">
+                  <div className="grid grid-cols-4 gap-2 bg-background/60 rounded-xl p-3 border border-indigo-100/40 dark:border-indigo-900/20 text-xs">
+                    <div>
+                      <span className="text-indigo-600 dark:text-indigo-400 font-medium block">{t("statusStarted")}</span>
+                      <span className="text-sm font-bold tabular-nums text-foreground">
+                        {toArabicNumerals(data.completionRate.started, locale)}
+                      </span>
+                    </div>
                     <div>
                       <span className="text-emerald-600 font-medium block">{t("statusCompleted")}</span>
                       <span className="text-sm font-bold tabular-nums text-foreground">

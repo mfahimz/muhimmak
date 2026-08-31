@@ -3,6 +3,9 @@ import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
 
+import { DEFAULT_LOW_SATISFACTION_THRESHOLD } from '@/lib/constants';
+export { DEFAULT_LOW_SATISFACTION_THRESHOLD };
+
 export type NotificationEvent =
   | 'low_satisfaction_alert'
   | 'daily_summary'

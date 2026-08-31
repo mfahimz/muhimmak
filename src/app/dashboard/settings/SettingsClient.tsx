@@ -14,6 +14,7 @@ import { LayoutGrid, ShieldCheck, Building2, BellRing, Info, Check, AlertTriangl
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import type { NotificationSetting, NotificationEvent } from "@/server/services/notifications.service"
+import { DEFAULT_LOW_SATISFACTION_THRESHOLD } from "@/lib/constants"
 
 export interface FacilityHoliday {
   id: string
@@ -38,6 +39,7 @@ const RESOURCES = [
   { id: 'dashboard', label: 'Dashboard' },
   { id: 'forms', label: 'Forms' },
   { id: 'sessions', label: 'Sessions' },
+  { id: 'announcements', label: 'Announcements' },
   { id: 'settings', label: 'Settings' },
   { id: 'users', label: 'Users' },
   { id: 'detailed_reports', label: 'Detailed Reports' },
@@ -56,6 +58,7 @@ const PERMISSIONS: Record<string, Record<string, {
     dashboard: { can_view: true, can_create: false, can_update: false, can_delete: false, can_view_sensitive: false },
     forms: { can_view: false, can_create: false, can_update: false, can_delete: false, can_view_sensitive: false },
     sessions: { can_view: true, can_create: true, can_update: false, can_delete: false, can_view_sensitive: false },
+    announcements: { can_view: false, can_create: false, can_update: false, can_delete: false, can_view_sensitive: false },
     settings: { can_view: false, can_create: false, can_update: false, can_delete: false, can_view_sensitive: false },
     users: { can_view: false, can_create: false, can_update: false, can_delete: false, can_view_sensitive: false },
     detailed_reports: { can_view: false, can_create: false, can_update: false, can_delete: false, can_view_sensitive: false },
@@ -64,6 +67,7 @@ const PERMISSIONS: Record<string, Record<string, {
     dashboard: { can_view: true, can_create: false, can_update: false, can_delete: false, can_view_sensitive: true },
     forms: { can_view: false, can_create: false, can_update: false, can_delete: false, can_view_sensitive: false },
     sessions: { can_view: true, can_create: true, can_update: false, can_delete: false, can_view_sensitive: false },
+    announcements: { can_view: false, can_create: false, can_update: false, can_delete: false, can_view_sensitive: false },
     settings: { can_view: false, can_create: false, can_update: false, can_delete: false, can_view_sensitive: false },
     users: { can_view: false, can_create: false, can_update: false, can_delete: false, can_view_sensitive: false },
     detailed_reports: { can_view: true, can_create: false, can_update: false, can_delete: false, can_view_sensitive: true },
@@ -72,6 +76,7 @@ const PERMISSIONS: Record<string, Record<string, {
     dashboard: { can_view: true, can_create: false, can_update: false, can_delete: false, can_view_sensitive: true },
     forms: { can_view: true, can_create: true, can_update: true, can_delete: true, can_view_sensitive: true },
     sessions: { can_view: true, can_create: true, can_update: false, can_delete: false, can_view_sensitive: true },
+    announcements: { can_view: false, can_create: false, can_update: false, can_delete: false, can_view_sensitive: false },
     settings: { can_view: false, can_create: false, can_update: false, can_delete: false, can_view_sensitive: false },
     users: { can_view: false, can_create: false, can_update: false, can_delete: false, can_view_sensitive: false },
     detailed_reports: { can_view: true, can_create: false, can_update: false, can_delete: false, can_view_sensitive: true },
@@ -80,6 +85,7 @@ const PERMISSIONS: Record<string, Record<string, {
     dashboard: { can_view: true, can_create: false, can_update: false, can_delete: false, can_view_sensitive: true },
     forms: { can_view: true, can_create: true, can_update: true, can_delete: true, can_view_sensitive: true },
     sessions: { can_view: true, can_create: true, can_update: true, can_delete: true, can_view_sensitive: true },
+    announcements: { can_view: true, can_create: true, can_update: true, can_delete: true, can_view_sensitive: true },
     settings: { can_view: true, can_create: true, can_update: true, can_delete: true, can_view_sensitive: true },
     users: { can_view: true, can_create: true, can_update: true, can_delete: true, can_view_sensitive: true },
     detailed_reports: { can_view: true, can_create: false, can_update: false, can_delete: false, can_view_sensitive: true },
@@ -226,7 +232,7 @@ export function SettingsClient({
       event_type: event,
       enabled: false,
       recipient_profile_ids: [],
-      threshold_percent: event === "low_satisfaction_alert" ? 80 : null,
+      threshold_percent: event === "low_satisfaction_alert" ? DEFAULT_LOW_SATISFACTION_THRESHOLD : null,
     }
   }
 
@@ -987,7 +993,7 @@ export function SettingsClient({
                                 min={0}
                                 max={100}
                                 disabled={!canEditNotifications}
-                                value={setting.threshold_percent ?? 80}
+                                value={setting.threshold_percent ?? DEFAULT_LOW_SATISFACTION_THRESHOLD}
                                 onChange={(e) =>
                                   updateNotifSettingState(event, {
                                     threshold_percent: parseInt(e.target.value) || 0,

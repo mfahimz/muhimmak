@@ -12,11 +12,10 @@ import { Switch } from "@/components/ui/switch"
 import { toast } from "sonner"
 import { toArabicNumerals } from "@/lib/utils/arabic-numerals"
 
-export type FieldCondition = {
-  fieldId: string
-  operator: 'equals' | 'not_equals' | 'lte' | 'gte'
-  value: string | number
-}
+import { FieldCondition, normalizeDependsOn } from "@/lib/forms/condition"
+import type { QuestionDomain } from "@/lib/forms/domain"
+
+export type { FieldCondition }
 
 export interface BuilderField {
   id: string
@@ -25,11 +24,12 @@ export interface BuilderField {
   label: string
   required: boolean
   options: string[]
-  dependsOn?: FieldCondition | null
+  dependsOn?: FieldCondition[] | FieldCondition | null
   weight?: number
   optionScores?: number[]
   ar?: { label: string; options: string[] }
   visit_stage?: 'drop_off' | 'pick_up'
+  domain?: QuestionDomain
 }
 
 export interface FormBuilderProps {
@@ -414,12 +414,12 @@ export function FormBuilder({
       .filter(f => f.type === 'multiple_choice' || f.type === 'star_rating' || f.type === 'numeric_scale')
   }
 
-  function handleUpdateCondition(
+  function handleUpdateConditions(
     fieldId: string,
-    condition: FieldCondition | null
+    conditions: FieldCondition[] | null
   ) {
     setFields(prev => prev.map(f =>
-      f.id === fieldId ? { ...f, dependsOn: condition } : f
+      f.id === fieldId ? { ...f, dependsOn: (conditions && conditions.length > 0) ? conditions : null } : f
     ))
   }
 
@@ -1159,6 +1159,7 @@ export function FormBuilder({
                       <div className="md:col-span-8 space-y-1.5">
                         <Label className="text-xs font-semibold text-slate-500 dark:text-slate-400">
                           {activeTab === 'en' ? t("questionLabel") : `${t("questionLabel")} (Arabic)`}
+                          {field.domain && <span className="ms-2 inline-flex rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-medium text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300">{field.domain}</span>}
                         </Label>
                         {activeTab === 'ar' && (
                           <p className="text-xs text-slate-400 mb-1">{field.label || "(Empty English Label)"}</p>
@@ -1360,7 +1361,7 @@ export function FormBuilder({
                       if (sources.length === 0) return null
 
                       const isOpen = expandedConditions.has(field.id)
-                      const condition = field.dependsOn
+                      const conditions = normalizeDependsOn(field.dependsOn)
 
                       return (
                         <div className="border border-slate-100 dark:border-slate-800 rounded-lg overflow-hidden">
@@ -1382,16 +1383,20 @@ export function FormBuilder({
                           >
                             <span className="flex items-center gap-1.5">
                               <GitBranch className="size-3.5" />
-                              {condition
-                                ? (() => {
-                                    const src = fields.find(f => f.id === condition.fieldId)
-                                    if (!src) return tAI("conditionEditor.conditionSet")
-                                    const opLabel = condition.operator === 'equals' ? '='
-                                      : condition.operator === 'not_equals' ? '≠'
-                                      : condition.operator === 'lte' ? '≤'
-                                      : '≥'
-                                    return `${tAI("conditionEditor.shownIf")} Q${src.order} ${opLabel} ${condition.value}`
-                                  })()
+                              {conditions.length > 0
+                                ? (conditions.length === 1
+                                    ? (() => {
+                                        const cond = conditions[0]
+                                        const src = fields.find(f => f.id === cond.fieldId)
+                                        if (!src) return tAI("conditionEditor.conditionSet")
+                                        const opLabel = cond.operator === 'equals' ? '='
+                                          : cond.operator === 'not_equals' ? '≠'
+                                          : cond.operator === 'lte' ? '≤'
+                                          : '≥'
+                                        return `${tAI("conditionEditor.shownIf")} Q${src.order} ${opLabel} ${cond.value}`
+                                      })()
+                                    : `${tAI("conditionEditor.shownIf")} ${tAI("conditionEditor.multipleConditionsSet", { count: conditions.length })}`
+                                  )
                                 : tAI("conditionEditor.addCondition")
                               }
                             </span>
@@ -1401,134 +1406,188 @@ export function FormBuilder({
                           {/* Condition editor body */}
                           {isOpen && (
                             <div className="px-3 py-3 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/20 space-y-3">
-
-                              {/* Clear condition button */}
-                              {condition && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleUpdateCondition(field.id, null)}
-                                  className="text-xs text-rose-500 hover:text-rose-600"
-                                >
-                                  {tAI("conditionEditor.removeCondition")}
-                                </button>
+                              {/* Clear all conditions header button */}
+                              {conditions.length > 0 && (
+                                <div className="flex items-center justify-between">
+                                  <Label className="text-xs text-slate-500 font-semibold">
+                                    {tAI("conditionEditor.showIfLabel")}
+                                  </Label>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleUpdateConditions(field.id, null)}
+                                    className="text-xs text-rose-500 hover:text-rose-600 font-medium"
+                                  >
+                                    {tAI("conditionEditor.removeCondition")}
+                                  </button>
+                                </div>
                               )}
 
-                              {/* Source question selector */}
-                              <div className="space-y-1">
-                                <Label className="text-xs text-slate-500">
+                              {conditions.length === 0 && (
+                                <p className="text-xs text-slate-400 italic">
                                   {tAI("conditionEditor.showIfLabel")}
-                                </Label>
-                                <Select
-                                  value={condition?.fieldId ?? ''}
-                                  onValueChange={(val: any) => {
-                                    if (!val) return
-                                    const src = sources.find(s => s.id === val)
-                                    if (!src) return
-                                    handleUpdateCondition(field.id, {
-                                      fieldId: String(val),
-                                      operator: (src.type === 'star_rating' || src.type === 'numeric_scale') ? ('lte' as const) : ('equals' as const),
-                                      value: src.type === 'star_rating' ? 3 : src.type === 'numeric_scale' ? 5 : (src.options[0] ?? ''),
-                                    })
-                                  }}
-                                >
-                                  <SelectTrigger className="h-8 text-xs border-slate-200 dark:border-slate-700">
-                                    <SelectValue placeholder={tAI("conditionEditor.pickQuestion")} />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {sources.map(src => (
-                                      <SelectItem key={src.id} value={src.id}>
-                                        Q{src.order}: {src.label || '(untitled)'}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              </div>
+                                </p>
+                              )}
 
-                              {/* Operator + value — only show once source is picked */}
-                              {condition?.fieldId && (() => {
-                                const src = fields.find(f => f.id === condition.fieldId)
-                                if (!src || !condition) return null
-
-                                const currentCond = condition
+                              {/* Conditions List */}
+                              {conditions.map((cond, condIdx) => {
+                                const src = fields.find(f => f.id === cond.fieldId)
 
                                 return (
-                                  <div className="flex items-center gap-2">
-                                    {/* Operator */}
-                                    <Select
-                                      value={currentCond.operator}
-                                      onValueChange={(val: any) => {
-                                        if (!val) return
-                                        handleUpdateCondition(field.id, {
-                                          ...currentCond,
-                                          operator: val,
-                                        })
-                                      }}
-                                    >
-                                      <SelectTrigger className="h-8 text-xs w-24 border-slate-200 dark:border-slate-700">
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        {src.type === 'multiple_choice' ? (
-                                          <>
-                                            <SelectItem value="equals">{tAI("conditionEditor.operatorEquals")}</SelectItem>
-                                            <SelectItem value="not_equals">{tAI("conditionEditor.operatorNotEquals")}</SelectItem>
-                                          </>
-                                        ) : (
-                                          <>
-                                            <SelectItem value="lte">{tAI("conditionEditor.operatorLte")}</SelectItem>
-                                            <SelectItem value="gte">{tAI("conditionEditor.operatorGte")}</SelectItem>
-                                          </>
-                                        )}
-                                      </SelectContent>
-                                    </Select>
-
-                                    {/* Value */}
-                                    {src.type === 'multiple_choice' ? (
-                                      <Select
-                                        value={String(currentCond.value)}
-                                        onValueChange={(val: any) => {
-                                          if (!val) return
-                                          handleUpdateCondition(field.id, {
-                                            ...currentCond,
-                                            value: String(val),
-                                          })
-                                        }}
-                                      >
-                                        <SelectTrigger className="h-8 text-xs flex-1 border-slate-200 dark:border-slate-700">
-                                          <SelectValue placeholder={tAI("conditionEditor.pickOption")} />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                          {src.options.map((opt, i) => (
-                                            <SelectItem key={i} value={opt}>
-                                              {opt || `Option ${i + 1}`}
-                                            </SelectItem>
-                                          ))}
-                                        </SelectContent>
-                                      </Select>
-                                    ) : (
-                                      <Select
-                                        value={String(currentCond.value)}
-                                        onValueChange={(val: any) => {
-                                          if (!val) return
-                                          handleUpdateCondition(field.id, {
-                                            ...currentCond,
-                                            value: Number(val),
-                                          })
-                                        }}
-                                      >
-                                        <SelectTrigger className="h-8 text-xs w-24 border-slate-200 dark:border-slate-700">
-                                          <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                          {(src.type === 'star_rating' ? [1, 2, 3, 4, 5] : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]).map(n => (
-                                            <SelectItem key={n} value={String(n)}>{n}</SelectItem>
-                                          ))}
-                                        </SelectContent>
-                                      </Select>
+                                  <React.Fragment key={condIdx}>
+                                    {condIdx > 0 && (
+                                      <div className="flex items-center gap-2 my-1">
+                                        <div className="h-px bg-slate-200 dark:bg-slate-800 flex-1" />
+                                        <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-2 py-0.5 rounded uppercase tracking-wider">
+                                          {tAI("conditionEditor.andLabel")}
+                                        </span>
+                                        <div className="h-px bg-slate-200 dark:bg-slate-800 flex-1" />
+                                      </div>
                                     )}
-                                  </div>
+
+                                    <div className="space-y-2 p-2.5 rounded-md border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900/60 shadow-xs relative group">
+                                      <div className="flex items-center justify-between gap-2">
+                                        <div className="flex-1 space-y-1">
+                                          <Select
+                                            value={cond.fieldId || ''}
+                                            onValueChange={(val: any) => {
+                                              if (!val) return
+                                              const selectedSrc = sources.find(s => s.id === val)
+                                              if (!selectedSrc) return
+                                              const updated = [...conditions]
+                                              updated[condIdx] = {
+                                                fieldId: String(val),
+                                                operator: (selectedSrc.type === 'star_rating' || selectedSrc.type === 'numeric_scale') ? ('lte' as const) : ('equals' as const),
+                                                value: selectedSrc.type === 'star_rating' ? 3 : selectedSrc.type === 'numeric_scale' ? 5 : (selectedSrc.options[0] ?? ''),
+                                              }
+                                              handleUpdateConditions(field.id, updated)
+                                            }}
+                                          >
+                                            <SelectTrigger className="h-8 text-xs border-slate-200 dark:border-slate-700">
+                                              <SelectValue placeholder={tAI("conditionEditor.pickQuestion")} />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              {sources.map(s => (
+                                                <SelectItem key={s.id} value={s.id}>
+                                                  Q{s.order}: {s.label || '(untitled)'}
+                                                </SelectItem>
+                                              ))}
+                                            </SelectContent>
+                                          </Select>
+                                        </div>
+
+                                        {/* Row Delete Button */}
+                                        <Button
+                                          type="button"
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() => {
+                                            const updated = conditions.filter((_, idx) => idx !== condIdx)
+                                            handleUpdateConditions(field.id, updated)
+                                          }}
+                                          className="h-8 w-8 p-0 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                                        >
+                                          <X className="size-3.5" />
+                                        </Button>
+                                      </div>
+
+                                      {/* Operator + Value */}
+                                      {cond.fieldId && src && (
+                                        <div className="flex items-center gap-2 pt-1">
+                                          <Select
+                                            value={cond.operator}
+                                            onValueChange={(val: any) => {
+                                              if (!val) return
+                                              const updated = [...conditions]
+                                              updated[condIdx] = { ...cond, operator: val }
+                                              handleUpdateConditions(field.id, updated)
+                                            }}
+                                          >
+                                            <SelectTrigger className="h-8 text-xs w-28 border-slate-200 dark:border-slate-700">
+                                              <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              {src.type === 'multiple_choice' ? (
+                                                <>
+                                                  <SelectItem value="equals">{tAI("conditionEditor.operatorEquals")}</SelectItem>
+                                                  <SelectItem value="not_equals">{tAI("conditionEditor.operatorNotEquals")}</SelectItem>
+                                                </>
+                                              ) : (
+                                                <>
+                                                  <SelectItem value="lte">{tAI("conditionEditor.operatorLte")}</SelectItem>
+                                                  <SelectItem value="gte">{tAI("conditionEditor.operatorGte")}</SelectItem>
+                                                </>
+                                              )}
+                                            </SelectContent>
+                                          </Select>
+
+                                          {src.type === 'multiple_choice' ? (
+                                            <Select
+                                              value={String(cond.value)}
+                                              onValueChange={(val: any) => {
+                                                if (!val) return
+                                                const updated = [...conditions]
+                                                updated[condIdx] = { ...cond, value: String(val) }
+                                                handleUpdateConditions(field.id, updated)
+                                              }}
+                                            >
+                                              <SelectTrigger className="h-8 text-xs flex-1 border-slate-200 dark:border-slate-700">
+                                                <SelectValue placeholder={tAI("conditionEditor.pickOption")} />
+                                              </SelectTrigger>
+                                              <SelectContent>
+                                                {src.options.map((opt, i) => (
+                                                  <SelectItem key={i} value={opt}>
+                                                    {opt || `Option ${i + 1}`}
+                                                  </SelectItem>
+                                                ))}
+                                              </SelectContent>
+                                            </Select>
+                                          ) : (
+                                            <Select
+                                              value={String(cond.value)}
+                                              onValueChange={(val: any) => {
+                                                if (!val) return
+                                                const updated = [...conditions]
+                                                updated[condIdx] = { ...cond, value: Number(val) }
+                                                handleUpdateConditions(field.id, updated)
+                                              }}
+                                            >
+                                              <SelectTrigger className="h-8 text-xs flex-1 border-slate-200 dark:border-slate-700">
+                                                <SelectValue />
+                                              </SelectTrigger>
+                                              <SelectContent>
+                                                {(src.type === 'star_rating' ? [1, 2, 3, 4, 5] : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]).map(n => (
+                                                  <SelectItem key={n} value={String(n)}>{n}</SelectItem>
+                                                ))}
+                                              </SelectContent>
+                                            </Select>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </React.Fragment>
                                 )
-                              })()}
+                              })}
+
+                              {/* Add Condition Button */}
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  const firstSrc = sources[0]
+                                  if (!firstSrc) return
+                                  const newCond: FieldCondition = {
+                                    fieldId: firstSrc.id,
+                                    operator: (firstSrc.type === 'star_rating' || firstSrc.type === 'numeric_scale') ? 'lte' : 'equals',
+                                    value: firstSrc.type === 'star_rating' ? 3 : firstSrc.type === 'numeric_scale' ? 5 : (firstSrc.options[0] ?? ''),
+                                  }
+                                  handleUpdateConditions(field.id, [...conditions, newCond])
+                                }}
+                                className="w-full h-8 text-xs font-medium text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-900/50 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 cursor-pointer"
+                              >
+                                <Plus className="size-3.5 mr-1" />
+                                {conditions.length === 0 ? tAI("conditionEditor.addCondition") : tAI("conditionEditor.addAnotherCondition")}
+                              </Button>
                             </div>
                           )}
                         </div>

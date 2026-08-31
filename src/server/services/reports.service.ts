@@ -2,6 +2,8 @@
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { computeWeightedScore } from '@/server/services/sessions.service';
+import { deepseek, DEEPSEEK_MODEL } from '@/server/lib/deepseek';
+import { isQuestionDomain, type QuestionDomain } from '@/lib/forms/domain';
 
 export interface ScoreTrendItem {
   date: string;
@@ -65,6 +67,82 @@ export interface ReportsData {
   satisfactionDistribution: SatisfactionDistribution;
   googleReviewConversion: GoogleReviewConversion;
   completionRate: CompletionRateData;
+}
+
+export interface ReportInsightDomain { domain: QuestionDomain; summary: string; sentiment: 'positive' | 'mixed' | 'negative' | 'neutral'; mentionCount: number; themes: string[] }
+export interface ReportInsights { overall: { summary: string; sentiment: ReportInsightDomain['sentiment'] }; domains: ReportInsightDomain[] }
+
+function normalizeReportRange(startDate: string, endDate: string) {
+  const start = startDate?.trim() || new Date(Date.now() - 29 * 86400000).toISOString().split('T')[0];
+  const end = endDate?.trim() || new Date().toISOString().split('T')[0];
+  return { start, end, startIso: `${start}T00:00:00.000Z`, endIso: `${end}T23:59:59.999Z` };
+}
+
+function validateInsights(value: any): ReportInsights {
+  const sentiments = ['positive', 'mixed', 'negative', 'neutral'];
+  const payload = value?.report || value?.result || value?.analysis || value;
+  const overall = payload?.overall || (payload?.overall_summary ? { summary: payload.overall_summary, sentiment: payload.overall_sentiment } : null) || (payload?.summary ? { summary: payload.summary, sentiment: payload.sentiment } : null);
+  const domainSource = payload?.domains || payload?.domain_breakdown || payload?.by_domain || payload?.domainInsights || [];
+  const rawDomains = Array.isArray(domainSource) ? domainSource : Object.entries(domainSource || {}).map(([domain, item]: [string, any]) => ({ domain, ...item }));
+  const normalizeSentiment = (sentiment: unknown) => typeof sentiment === 'string' ? sentiment.toLowerCase().replace(/\s+/g, '_') : sentiment;
+  if (!payload || typeof payload !== 'object' || !overall || typeof overall.summary !== 'string' || !sentiments.includes(normalizeSentiment(overall.sentiment) as string)) throw new Error('Malformed report insight response');
+  const domains = rawDomains.map((item: any) => {
+    const sentiment = normalizeSentiment(item.sentiment);
+    const mentionCount = Number.isInteger(item.mentionCount) ? item.mentionCount : item.mention_count;
+    if (!isQuestionDomain(item.domain) || typeof item.summary !== 'string' || !sentiments.includes(sentiment as string) || !Number.isInteger(mentionCount) || !Array.isArray(item.themes)) throw new Error('Malformed report insight domain');
+    return { domain: item.domain, summary: item.summary, sentiment: sentiment as ReportInsightDomain['sentiment'], mentionCount, themes: item.themes.filter((x: unknown) => typeof x === 'string').slice(0, 5) };
+  });
+  return { overall: { summary: overall.summary, sentiment: normalizeSentiment(overall.sentiment) as ReportInsightDomain['sentiment'] }, domains };
+}
+
+async function callInsights(prompt: string): Promise<ReportInsights> {
+  const makeCall = () => deepseek.chat.completions.create({ model: DEEPSEEK_MODEL, temperature: 0.2, thinking: { type: 'disabled' }, response_format: { type: 'json_object' }, messages: [
+    { role: 'system', content: 'You analyze customer feedback. Return only valid JSON matching: {"overall":{"summary":string,"sentiment":"positive|mixed|negative|neutral"},"domains":[{"domain":string,"summary":string,"sentiment":"positive|mixed|negative|neutral","mentionCount":number,"themes":string[]}]}' },
+    { role: 'user', content: prompt },
+  ] } as any);
+  const parse = (result: any) => {
+    const raw = result.choices?.[0]?.message?.content || '{}';
+    try { return validateInsights(JSON.parse(raw.replace(/^```(?:json)?\s*|\s*```$/gi, '').trim())); }
+    catch (error) { console.warn('[reports.service] Invalid DeepSeek insight response:', raw, error); throw error; }
+  };
+  try { return parse(await makeCall()); }
+  catch { await new Promise((resolve) => setTimeout(resolve, 1000)); return parse(await makeCall()); }
+}
+
+export async function getOrGenerateReportInsights(startDate: string, endDate: string): Promise<ReportInsights> {
+  const range = normalizeReportRange(startDate, endDate);
+  const admin = createAdminClient();
+  const { data: sessions } = await admin.from('sessions').select('id, form_id, status, created_at').gte('created_at', range.startIso).lte('created_at', range.endIso).order('created_at', { ascending: true });
+  const allSessions = sessions || [];
+  const completed = allSessions.filter((session) => session.status === 'completed');
+  const { data: responses } = completed.length ? await admin.from('responses').select('session_id, answers, submitted_at').in('session_id', completed.map((session) => session.id)) : { data: [] };
+  const latestSessionAt = allSessions.at(-1)?.created_at || null;
+  const latestResponseAt = (responses || []).reduce<string | null>((latest, response: any) => !latest || response.submitted_at > latest ? response.submitted_at : latest, null);
+  const { data: cached } = await admin.from('report_insight_cache').select('*').eq('date_range_start', range.start).eq('date_range_end', range.end).maybeSingle();
+  if (cached && cached.session_count === allSessions.length && cached.latest_session_at === latestSessionAt && cached.latest_response_at === latestResponseAt) return cached.summary_json as ReportInsights;
+
+  const formIds = [...new Set(completed.map((session) => session.form_id).filter(Boolean))];
+  const { data: forms } = formIds.length ? await admin.from('forms').select('id, fields').in('id', formIds) : { data: [] };
+  const formMap = new Map((forms || []).map((form: any) => [form.id, Array.isArray(form.fields) ? form.fields : []]));
+  const responseMap = new Map((responses || []).map((response: any) => [response.session_id, response.answers || {}]));
+  const aggregates = new Map<string, { scores: number[]; answers: string[] }>();
+  for (const session of completed) {
+    const fields = formMap.get(session.form_id) || [];
+    const answers = responseMap.get(session.id) || {};
+    const { finalScore } = computeWeightedScore(fields, answers, answers._textScores || {});
+    for (const field of fields) {
+      const domain = isQuestionDomain(field.domain) ? field.domain : 'other';
+      if (!aggregates.has(domain)) aggregates.set(domain, { scores: [], answers: [] });
+      if (field.type !== 'text') aggregates.get(domain)!.scores.push(Math.round(finalScore));
+      const answer = answers[field.id];
+      if (field.type === 'text' && typeof answer === 'string' && answer.trim()) aggregates.get(domain)!.answers.push(answer.trim());
+    }
+  }
+  const prompt = `Create a concise customer feedback report from this data. Mention counts must equal the number of supplied text answers. Include domains only when there is data.\n${JSON.stringify([...aggregates].map(([domain, data]) => ({ domain, averageScore: data.scores.length ? Math.round(data.scores.reduce((a, b) => a + b, 0) / data.scores.length) : null, textAnswers: data.answers })))} `;
+  const summary = await callInsights(prompt);
+  const { error } = await admin.from('report_insight_cache').upsert({ date_range_start: range.start, date_range_end: range.end, session_count: allSessions.length, latest_session_at: latestSessionAt, latest_response_at: latestResponseAt, summary_json: summary, generated_at: new Date().toISOString(), updated_at: new Date().toISOString() }, { onConflict: 'date_range_start,date_range_end' });
+  if (error) throw error;
+  return summary;
 }
 
 // Generate all YYYY-MM-DD date strings between start and end dates (inclusive)

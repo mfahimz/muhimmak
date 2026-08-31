@@ -3,7 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { redirect } from "next/navigation";
 import { SiteHeader } from "@/components/site-header";
 import { getTranslations } from "next-intl/server";
-import { computeReportsData } from "@/server/services/reports.service";
+import { computeReportsData, getOrGenerateReportInsights } from "@/server/services/reports.service";
 import { ReportsClient } from "./ReportsClient";
 import { getPresetDates } from "@/lib/utils/date-range";
 
@@ -40,7 +40,7 @@ export default async function ReportsPage() {
   const { startDate, endDate } = getPresetDates("30d");
 
   // Pre-fetch initial data server-side
-  const initialReportsData = await computeReportsData(startDate, endDate);
+  const [initialReportsData, initialInsights] = await Promise.all([computeReportsData(startDate, endDate), getOrGenerateReportInsights(startDate, endDate)]);
 
   return (
     <>
@@ -59,6 +59,7 @@ export default async function ReportsPage() {
           initialData={initialReportsData}
           initialStartDate={startDate}
           initialEndDate={endDate}
+          initialInsights={initialInsights}
         />
       </div>
     </>

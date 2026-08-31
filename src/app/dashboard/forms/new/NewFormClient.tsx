@@ -32,10 +32,13 @@ export function NewFormClient({ userId, types }: NewFormClientProps) {
     const supabase = createClient()
 
     try {
+      const domainResponse = await fetch("/api/v1/forms/infer-domains", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fields }) })
+      if (!domainResponse.ok) throw new Error("Could not infer question domains")
+      const { fields: fieldsWithDomains } = await domainResponse.json()
       const { error } = await supabase.from("forms").insert({
         name,
         description,
-        fields,
+        fields: fieldsWithDomains,
         name_ar: nameAr,
         description_ar: descriptionAr,
         is_visit_journey: isVisitJourney,

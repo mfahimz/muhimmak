@@ -9,6 +9,10 @@ import { Button } from "@/components/ui/button"
 import { ChevronLeft, AlertTriangle, ArrowRight, RefreshCw, QrCode, ThumbsUp, Loader2, ShieldCheck } from "lucide-react"
 import { QRCodeSVG } from "qrcode.react"
 import { toArabicNumerals } from "@/lib/utils/arabic-numerals"
+import { FieldCondition, normalizeDependsOn } from "@/lib/forms/condition"
+import type { QuestionDomain } from "@/lib/forms/domain"
+import { AutoversaAnnouncement } from "@/components/AutoversaAnnouncement"
+import { AnnouncementCard } from "@/components/AnnouncementCard"
 
 export interface SurveyField {
   id: string
@@ -16,15 +20,12 @@ export interface SurveyField {
   label: string
   required: boolean
   options: string[]
-  dependsOn?: {
-    fieldId: string
-    operator: 'equals' | 'not_equals' | 'lte' | 'gte'
-    value: string | number
-  } | null
+  dependsOn?: FieldCondition[] | FieldCondition | null
   weight?: number
   optionScores?: number[]
   ar?: { label: string; options: string[] }
   visit_stage?: 'drop_off' | 'pick_up' | null
+  domain?: QuestionDomain
 }
 
 export interface SurveySession {
@@ -55,22 +56,25 @@ interface SurveyClientProps {
 }
 
 function isFieldVisible(field: SurveyField, answers: Record<string, any>): boolean {
-  if (!field.dependsOn) return true
-  const sourceAnswer = answers[field.dependsOn.fieldId]
-  if (sourceAnswer === undefined) return false
+  const conditions = normalizeDependsOn(field.dependsOn)
+  if (conditions.length === 0) return true
 
-  switch (field.dependsOn.operator) {
-    case 'equals':
-      return sourceAnswer === field.dependsOn.value
-    case 'not_equals':
-      return sourceAnswer !== field.dependsOn.value
-    case 'lte':
-      return typeof sourceAnswer === 'number' && sourceAnswer <= (field.dependsOn.value as number)
-    case 'gte':
-      return typeof sourceAnswer === 'number' && sourceAnswer >= (field.dependsOn.value as number)
-    default:
-      return true
-  }
+  return conditions.every(cond => {
+    const sourceAnswer = answers[cond.fieldId]
+    if (sourceAnswer === undefined) return false
+    switch (cond.operator) {
+      case 'equals':
+        return sourceAnswer === cond.value
+      case 'not_equals':
+        return sourceAnswer !== cond.value
+      case 'lte':
+        return typeof sourceAnswer === 'number' && sourceAnswer <= (cond.value as number)
+      case 'gte':
+        return typeof sourceAnswer === 'number' && sourceAnswer >= (cond.value as number)
+      default:
+        return true
+    }
+  })
 }
 
 export function SurveyClient({ session, plateNumber, form, facilitySettings, isPublicMode, initialLanguageSwitches }: SurveyClientProps) {
@@ -113,6 +117,14 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
   const [textVal, setTextVal] = React.useState("")
   const [submitting, setSubmitting] = React.useState(false)
   const [showQr, setShowQr] = React.useState(false)
+  const [announcement, setAnnouncement] = React.useState<{
+    slug: string
+    title_en: string
+    title_ar: string
+    body_en: string
+    body_ar: string
+    image_url: string | null
+  } | null>(null)
 
   // AI closing question states
   const [extraFields, setExtraFields] = React.useState<SurveyField[]>([])
@@ -619,6 +631,9 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
       if (data.showQr) {
         setShowQr(true)
       }
+      if (data.announcement) {
+        setAnnouncement(data.announcement)
+      }
       setStep("completed")
     } catch (err) {
       console.error(err)
@@ -862,6 +877,24 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
                   <QRCodeSVG value={facilitySettings.google_review_url} size={150} level="H" />
                 </div>
               </div>
+            )
+          )}
+
+          {announcement && (
+            announcement.slug === 'autoversa-launch' ? (
+              <AutoversaAnnouncement
+                title_en={announcement.title_en}
+                title_ar={announcement.title_ar}
+                body_en={announcement.body_en}
+                body_ar={announcement.body_ar}
+                isArabic={isArabic}
+              />
+            ) : (
+              <AnnouncementCard
+                title={isArabic ? announcement.title_ar : announcement.title_en}
+                body={isArabic ? announcement.body_ar : announcement.body_en}
+                imageUrl={announcement.image_url}
+              />
             )
           )}
 

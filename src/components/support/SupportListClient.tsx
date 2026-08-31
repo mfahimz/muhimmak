@@ -5,7 +5,7 @@ import { useTranslations } from "next-intl"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Inbox, ChevronDown, ChevronRight, Loader2, AlertCircle, Sparkles } from "lucide-react"
+import { Inbox, ChevronDown, ChevronRight, Loader2, AlertCircle, Sparkles, MessageSquare, Send, UserCheck } from "lucide-react"
 
 export interface SupportTicketItem {
   id: string
@@ -19,13 +19,36 @@ export interface SupportTicketItem {
   } | null
   language_detected: string | null
   severity: 'low' | 'medium' | 'high'
-  status: 'open' | 'in_progress' | 'resolved'
+  status: 'open' | 'in_progress' | 'resolved' | 'closed'
   created_at: string
   updated_at: string
   submitted_by_profile?: {
     full_name?: string
     role?: string
   } | null
+  assigned_to?: string | null
+  assigned_to_profile?: {
+    full_name?: string
+    role?: string
+  } | null
+}
+
+export interface SupportTicketCommentItem {
+  id: string
+  ticket_id: string
+  author_id: string
+  comment: string
+  created_at: string
+  author_profile?: {
+    full_name?: string
+    role?: string
+  } | null
+}
+
+export interface AssignableUser {
+  id: string
+  full_name: string
+  role: string
 }
 
 interface SupportListClientProps {
@@ -37,10 +60,59 @@ export function SupportListClient({ initialTickets }: SupportListClientProps) {
   const [tickets, setTickets] = React.useState<SupportTicketItem[]>(initialTickets)
   const [expandedId, setExpandedId] = React.useState<string | null>(null)
   const [updatingId, setUpdatingId] = React.useState<string | null>(null)
+  const [assigningId, setAssigningId] = React.useState<string | null>(null)
   const [updateError, setUpdateError] = React.useState<string | null>(null)
 
+  const [assignableUsers, setAssignableUsers] = React.useState<AssignableUser[]>([])
+
+  const [commentsByTicket, setCommentsByTicket] = React.useState<Record<string, SupportTicketCommentItem[]>>({})
+  const [loadingComments, setLoadingComments] = React.useState<Record<string, boolean>>({})
+  const [commentInputs, setCommentInputs] = React.useState<Record<string, string>>({})
+  const [submittingComment, setSubmittingComment] = React.useState<Record<string, boolean>>({})
+
+  // Fetch assignable staff (super_admin and ceo ONLY) on mount
+  React.useEffect(() => {
+    async function fetchUsers() {
+      try {
+        const response = await fetch("/api/v1/users")
+        if (response.ok) {
+          const data = await response.json()
+          if (data.users && Array.isArray(data.users)) {
+            // Filter strictly to active super_admin and ceo roles
+            const filtered = data.users.filter(
+              (u: any) => u.is_active && ["super_admin", "ceo"].includes(u.role)
+            )
+            setAssignableUsers(filtered)
+          }
+        }
+      } catch (err) {
+        console.error("Failed to fetch assignable users:", err)
+      }
+    }
+    fetchUsers()
+  }, [])
+
+  const fetchComments = React.useCallback(async (ticketId: string) => {
+    setLoadingComments((prev) => ({ ...prev, [ticketId]: true }))
+    try {
+      const response = await fetch(`/api/v1/support/${ticketId}/comments`)
+      if (response.ok) {
+        const data = await response.json()
+        setCommentsByTicket((prev) => ({ ...prev, [ticketId]: data.comments || [] }))
+      }
+    } catch (err) {
+      console.error("Failed to fetch ticket comments:", err)
+    } finally {
+      setLoadingComments((prev) => ({ ...prev, [ticketId]: false }))
+    }
+  }, [])
+
   const toggleExpand = (id: string) => {
+    const isOpening = expandedId !== id
     setExpandedId((prev) => (prev === id ? null : id))
+    if (isOpening && !commentsByTicket[id]) {
+      fetchComments(id)
+    }
   }
 
   const handleStatusChange = async (ticketId: string, newStatus: string) => {
@@ -71,6 +143,77 @@ export function SupportListClient({ initialTickets }: SupportListClientProps) {
       setUpdateError(err.message || "Failed to update status")
     } finally {
       setUpdatingId(null)
+    }
+  }
+
+  const handleAssignChange = async (ticketId: string, assigneeId: string) => {
+    setAssigningId(ticketId)
+    setUpdateError(null)
+
+    try {
+      const response = await fetch(`/api/v1/support/${ticketId}/assign`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assigneeId }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || t("errorAssignTicket"))
+      }
+
+      const assignedUser = assignableUsers.find((u) => u.id === assigneeId)
+
+      setTickets((prev) =>
+        prev.map((t) =>
+          t.id === ticketId
+            ? {
+                ...t,
+                assigned_to: assigneeId || null,
+                assigned_to_profile: assignedUser
+                  ? { full_name: assignedUser.full_name, role: assignedUser.role }
+                  : null,
+                updated_at: new Date().toISOString(),
+              }
+            : t
+        )
+      )
+    } catch (err: any) {
+      setUpdateError(err.message || t("errorAssignTicket"))
+    } finally {
+      setAssigningId(null)
+    }
+  }
+
+  const handleAddComment = async (ticketId: string) => {
+    const text = commentInputs[ticketId]?.trim()
+    if (!text) return
+
+    setSubmittingComment((prev) => ({ ...prev, [ticketId]: true }))
+    setUpdateError(null)
+
+    try {
+      const response = await fetch(`/api/v1/support/${ticketId}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ comment: text }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || t("errorAddComment"))
+      }
+
+      // Clear input
+      setCommentInputs((prev) => ({ ...prev, [ticketId]: "" }))
+      // Refresh comments for this ticket locally
+      await fetchComments(ticketId)
+    } catch (err: any) {
+      setUpdateError(err.message || t("errorAddComment"))
+    } finally {
+      setSubmittingComment((prev) => ({ ...prev, [ticketId]: false }))
     }
   }
 
@@ -109,6 +252,12 @@ export function SupportListClient({ initialTickets }: SupportListClientProps) {
         return (
           <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800 font-medium">
             {t("statusResolved")}
+          </Badge>
+        )
+      case "closed":
+        return (
+          <Badge className="bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700 font-medium">
+            {t("statusClosed")}
           </Badge>
         )
       default:
@@ -164,6 +313,7 @@ export function SupportListClient({ initialTickets }: SupportListClientProps) {
                     <th className="px-4 py-3.5">{t("colSeverity")}</th>
                     <th className="px-4 py-3.5">{t("colStatus")}</th>
                     <th className="px-4 py-3.5">{t("colSubmittedBy")}</th>
+                    <th className="px-4 py-3.5">{t("colAssignee")}</th>
                     <th className="px-4 py-3.5 text-right">{t("colDate")}</th>
                   </tr>
                 </thead>
@@ -172,6 +322,7 @@ export function SupportListClient({ initialTickets }: SupportListClientProps) {
                     const isExpanded = expandedId === ticket.id
                     const title = ticket.structured?.title || "Support Ticket"
                     const submitter = ticket.submitted_by_profile?.full_name || "Staff Member"
+                    const assigneeName = ticket.assigned_to_profile?.full_name || t("unassigned")
                     const formattedDate = new Date(ticket.created_at).toLocaleDateString("en-AE", {
                       day: "numeric",
                       month: "short",
@@ -208,6 +359,15 @@ export function SupportListClient({ initialTickets }: SupportListClientProps) {
                           <td className="px-4 py-3.5 text-slate-700 dark:text-slate-300 font-medium">
                             {submitter}
                           </td>
+                          <td className="px-4 py-3.5 text-slate-700 dark:text-slate-300 font-medium">
+                            <div className="flex items-center gap-1.5">
+                              {ticket.assigned_to_profile?.full_name ? (
+                                <span className="text-slate-800 dark:text-slate-200 font-medium">{assigneeName}</span>
+                              ) : (
+                                <span className="text-slate-400 dark:text-slate-500 italic text-xs">{t("unassigned")}</span>
+                              )}
+                            </div>
+                          </td>
                           <td className="px-4 py-3.5 text-right text-xs text-slate-500 font-mono">
                             {formattedDate}
                           </td>
@@ -215,32 +375,62 @@ export function SupportListClient({ initialTickets }: SupportListClientProps) {
 
                         {isExpanded && (
                           <tr className="bg-indigo-50/30 dark:bg-indigo-950/20 border-t border-b border-indigo-100 dark:border-indigo-900/40">
-                            <td colSpan={6} className="p-5">
-                              <div className="space-y-4 max-w-4xl">
-                                <div className="flex items-center justify-between border-b border-slate-200/60 dark:border-slate-800 pb-3">
+                            <td colSpan={7} className="p-5">
+                              <div className="space-y-6 max-w-4xl">
+                                {/* Top Controls Bar: Status & Assign dropdowns */}
+                                <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200/60 dark:border-slate-800 pb-3">
                                   <div className="flex items-center gap-2 text-xs font-semibold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">
                                     <Sparkles className="size-3.5" />
                                     <span>AI Structuring Breakdown</span>
                                   </div>
 
-                                  <div className="flex items-center gap-3">
-                                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                                      {t("updateStatus")}:
-                                    </label>
-                                    <div className="relative">
-                                      <select
-                                        value={ticket.status}
-                                        disabled={updatingId === ticket.id}
-                                        onChange={(e) => handleStatusChange(ticket.id, e.target.value)}
-                                        className="h-8 pl-3 pr-8 text-xs font-medium rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-                                      >
-                                        <option value="open">{t("statusOpen")}</option>
-                                        <option value="in_progress">{t("statusInProgress")}</option>
-                                        <option value="resolved">{t("statusResolved")}</option>
-                                      </select>
-                                      {updatingId === ticket.id && (
-                                        <Loader2 className="size-3.5 animate-spin absolute right-2 top-2 text-indigo-600" />
-                                      )}
+                                  <div className="flex flex-wrap items-center gap-4">
+                                    {/* Assign Dropdown */}
+                                    <div className="flex items-center gap-2">
+                                      <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                                        {t("assignTo")}:
+                                      </label>
+                                      <div className="relative">
+                                        <select
+                                          value={ticket.assigned_to || ""}
+                                          disabled={assigningId === ticket.id}
+                                          onChange={(e) => handleAssignChange(ticket.id, e.target.value)}
+                                          className="h-8 pl-3 pr-8 text-xs font-medium rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                                        >
+                                          <option value="">{t("unassigned")}</option>
+                                          {assignableUsers.map((u) => (
+                                            <option key={u.id} value={u.id}>
+                                              {u.full_name}
+                                            </option>
+                                          ))}
+                                        </select>
+                                        {assigningId === ticket.id && (
+                                          <Loader2 className="size-3.5 animate-spin absolute right-2 top-2 text-indigo-600" />
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    {/* Status Dropdown */}
+                                    <div className="flex items-center gap-2">
+                                      <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                                        {t("updateStatus")}:
+                                      </label>
+                                      <div className="relative">
+                                        <select
+                                          value={ticket.status}
+                                          disabled={updatingId === ticket.id}
+                                          onChange={(e) => handleStatusChange(ticket.id, e.target.value)}
+                                          className="h-8 pl-3 pr-8 text-xs font-medium rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                                        >
+                                          <option value="open">{t("statusOpen")}</option>
+                                          <option value="in_progress">{t("statusInProgress")}</option>
+                                          <option value="resolved">{t("statusResolved")}</option>
+                                          <option value="closed">{t("statusClosed")}</option>
+                                        </select>
+                                        {updatingId === ticket.id && (
+                                          <Loader2 className="size-3.5 animate-spin absolute right-2 top-2 text-indigo-600" />
+                                        )}
+                                      </div>
                                     </div>
                                   </div>
                                 </div>
@@ -272,6 +462,98 @@ export function SupportListClient({ initialTickets }: SupportListClientProps) {
                                   <p className="text-xs text-slate-800 dark:text-slate-200 font-mono whitespace-pre-wrap">
                                     {ticket.raw_input}
                                   </p>
+                                </div>
+
+                                {/* Comments & Activity Section */}
+                                <div className="bg-white dark:bg-slate-950 p-4 rounded-xl border border-slate-200 dark:border-slate-800 space-y-4">
+                                  <div className="flex items-center gap-2 text-xs font-semibold text-slate-900 dark:text-slate-100 border-b border-slate-100 dark:border-slate-800 pb-2.5">
+                                    <MessageSquare className="size-4 text-indigo-600 dark:text-indigo-400" />
+                                    <span>{t("commentsTitle")}</span>
+                                  </div>
+
+                                  {/* Add Comment Input Form */}
+                                  <div className="space-y-2">
+                                    <textarea
+                                      rows={2}
+                                      value={commentInputs[ticket.id] || ""}
+                                      onChange={(e) =>
+                                        setCommentInputs((prev) => ({
+                                          ...prev,
+                                          [ticket.id]: e.target.value,
+                                        }))
+                                      }
+                                      placeholder={t("commentPlaceholder")}
+                                      className="w-full p-2.5 text-xs rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 resize-y"
+                                    />
+                                    <div className="flex justify-end">
+                                      <Button
+                                        size="sm"
+                                        disabled={
+                                          submittingComment[ticket.id] ||
+                                          !commentInputs[ticket.id]?.trim()
+                                        }
+                                        onClick={() => handleAddComment(ticket.id)}
+                                        className="h-8 text-xs font-medium bg-indigo-600 hover:bg-indigo-700 text-white gap-1.5"
+                                      >
+                                        {submittingComment[ticket.id] ? (
+                                          <>
+                                            <Loader2 className="size-3.5 animate-spin" />
+                                            <span>{t("submittingComment")}</span>
+                                          </>
+                                        ) : (
+                                          <>
+                                            <Send className="size-3.5" />
+                                            <span>{t("addComment")}</span>
+                                          </>
+                                        )}
+                                      </Button>
+                                    </div>
+                                  </div>
+
+                                  {/* Existing Comments List */}
+                                  <div className="space-y-3 pt-2">
+                                    {loadingComments[ticket.id] ? (
+                                      <div className="py-4 flex justify-center text-slate-400">
+                                        <Loader2 className="size-5 animate-spin" />
+                                      </div>
+                                    ) : (commentsByTicket[ticket.id] || []).length === 0 ? (
+                                      <p className="text-xs text-slate-400 italic">
+                                        {t("noComments")}
+                                      </p>
+                                    ) : (
+                                      <div className="space-y-3 divide-y divide-slate-100 dark:divide-slate-800/80">
+                                        {(commentsByTicket[ticket.id] || []).map((c) => {
+                                          const authorName =
+                                            c.author_profile?.full_name || "Staff Member"
+                                          const commentDate = new Date(
+                                            c.created_at
+                                          ).toLocaleDateString("en-AE", {
+                                            day: "numeric",
+                                            month: "short",
+                                            year: "numeric",
+                                            hour: "2-digit",
+                                            minute: "2-digit",
+                                          })
+
+                                          return (
+                                            <div key={c.id} className="pt-3 first:pt-0 space-y-1">
+                                              <div className="flex items-center justify-between text-xs">
+                                                <span className="font-semibold text-slate-900 dark:text-slate-100">
+                                                  {authorName}
+                                                </span>
+                                                <span className="text-[11px] text-slate-400 font-mono">
+                                                  {commentDate}
+                                                </span>
+                                              </div>
+                                              <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">
+                                                {c.comment}
+                                              </p>
+                                            </div>
+                                          )
+                                        })}
+                                      </div>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
                             </td>
