@@ -233,4 +233,66 @@ export function dailyQrEmail(data: {
   };
 }
 
+export function dailyQrFailureAlertEmail(data: {
+  recipientEmail: string;
+  recipientName?: string;
+  errorReason: string;
+  diagnosticDetails?: string;
+  dateLabel: string;
+  feedbackUrl?: string;
+}): { subject: string; html: string } {
+  const content = `
+    <div style="background-color:#fff1f2;border:1px solid #fecdd3;border-radius:8px;padding:16px;margin:0 0 20px 0;">
+      <p style="margin:0 0 4px 0;font-size:11px;font-weight:700;letter-spacing:1px;color:#e11d48;text-transform:uppercase;">
+        ⚠ Daily QR Delivery Alert
+      </p>
+      <h2 style="margin:0;font-size:18px;font-weight:700;color:#9f1239;">
+        Customer Feedback QR Email Delivery Issue
+      </h2>
+    </div>
+
+    <p style="margin:0 0 16px 0;font-size:14px;color:#334155;line-height:1.6;">
+      The automated daily feedback QR code email for <strong>${data.dateLabel}</strong> encountered a delivery failure or delay.
+    </p>
+
+    <div style="background-color:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:16px;margin:20px 0;">
+      <table width="100%" cellpadding="6" cellspacing="0" style="font-size:13px;color:#334155;">
+        <tr>
+          <td style="font-weight:600;width:140px;color:#64748b;">Intended Recipient:</td>
+          <td><strong>${data.recipientName ? `${data.recipientName} &lt;${data.recipientEmail}&gt;` : data.recipientEmail}</strong></td>
+        </tr>
+        <tr>
+          <td style="font-weight:600;color:#64748b;">Failure Issue:</td>
+          <td style="color:#b91c1c;font-weight:600;">${data.errorReason}</td>
+        </tr>
+        ${data.diagnosticDetails ? `
+        <tr>
+          <td style="font-weight:600;color:#64748b;vertical-align:top;">Diagnostic Details:</td>
+          <td style="font-family:monospace;font-size:12px;background:#f1f5f9;padding:8px;border-radius:6px;word-break:break-word;">
+            ${data.diagnosticDetails}
+          </td>
+        </tr>
+        ` : ''}
+      </table>
+    </div>
+
+    ${data.feedbackUrl ? `
+    <div style="background-color:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:16px;margin:20px 0;text-align:center;word-break:break-all;">
+      <p style="margin:0 0 8px 0;font-size:11px;font-weight:700;color:#4f46e5;text-transform:uppercase;letter-spacing:1px;">Today's Active Direct Link</p>
+      <a href="${data.feedbackUrl}" target="_blank" style="font-size:14px;color:#2563eb;text-decoration:underline;font-weight:500;">${data.feedbackUrl}</a>
+    </div>
+    ` : ''}
+
+    <p style="margin:16px 0 0 0;font-size:13px;color:#64748b;line-height:1.5;">
+      <strong>Action Required:</strong> Please check the recipient's mailbox storage quota, verify the notification email in the dashboard settings, or advise staff to view today's QR code directly in the dashboard at <em>/dashboard/daily-qr</em>.
+    </p>
+  `;
+
+  return {
+    subject: `[Muhimmak] ⚠ Action Required: Daily QR Email Delivery Issue — ${data.dateLabel}`,
+    html: buildEmailWrapper(content),
+  };
+}
+
+
 
