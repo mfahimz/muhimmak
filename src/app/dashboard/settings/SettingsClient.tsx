@@ -897,21 +897,61 @@ export function SettingsClient({
                               <div className="flex flex-wrap gap-1.5">
                                 {selectedUserIds.map((userId) => {
                                   const u = availableUsers.find((user) => user.id === userId)
-                                  if (!u) return null
+                                  if (!u) {
+                                    return (
+                                      <span
+                                        key={userId}
+                                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800"
+                                      >
+                                        <AlertTriangle className="size-3 text-rose-500 shrink-0" />
+                                        <span>{t("notifUnknownUser")}</span>
+                                        {canEditNotifications && (
+                                          <button
+                                            type="button"
+                                            onClick={() => toggleNotifRecipient(event, userId)}
+                                            className="hover:text-rose-600 focus:outline-hidden font-bold leading-none ms-0.5 cursor-pointer"
+                                            aria-label="Remove recipient"
+                                          >
+                                            &times;
+                                          </button>
+                                        )}
+                                      </span>
+                                    )
+                                  }
+
+                                  const hasEmail = Boolean(u.notification_email && u.notification_email.trim())
+
                                   return (
                                     <span
                                       key={userId}
-                                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800"
+                                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border ${
+                                        hasEmail
+                                          ? "bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800"
+                                          : "bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border-amber-300 dark:border-amber-800"
+                                      }`}
                                     >
+                                      {!hasEmail && <AlertTriangle className="size-3 text-amber-500 shrink-0" />}
                                       <span>{u.full_name}</span>
-                                      <Badge className="text-[10px] px-1 py-0 bg-indigo-100 dark:bg-indigo-900 text-indigo-800 dark:text-indigo-200 border-none font-medium">
+                                      <Badge
+                                        className={`text-[10px] px-1 py-0 border-none font-medium ${
+                                          hasEmail
+                                            ? "bg-indigo-100 dark:bg-indigo-900 text-indigo-800 dark:text-indigo-200"
+                                            : "bg-amber-100 dark:bg-amber-900 text-amber-800 dark:text-amber-200"
+                                        }`}
+                                      >
                                         {u.role}
                                       </Badge>
+                                      {!hasEmail && (
+                                        <span className="text-[10px] font-normal text-amber-600 dark:text-amber-400">
+                                          ({t("notifNoEmailOnRecipient")})
+                                        </span>
+                                      )}
                                       {canEditNotifications && (
                                         <button
                                           type="button"
                                           onClick={() => toggleNotifRecipient(event, userId)}
-                                          className="hover:text-rose-600 focus:outline-hidden font-bold leading-none ms-0.5"
+                                          className="hover:text-rose-600 focus:outline-hidden font-bold leading-none ms-0.5 cursor-pointer"
+                                          aria-label="Remove recipient"
                                         >
                                           &times;
                                         </button>
@@ -922,6 +962,17 @@ export function SettingsClient({
                               </div>
                             )}
                           </div>
+
+                          {/* Warning if setting enabled but all recipients lack valid email */}
+                          {setting.enabled && selectedUserIds.length > 0 && selectedUserIds.every((userId) => {
+                            const u = availableUsers.find((user) => user.id === userId)
+                            return !u || !u.notification_email?.trim()
+                          }) && (
+                            <div className="flex items-center gap-2 p-2.5 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-xs text-amber-800 dark:text-amber-300">
+                              <AlertTriangle className="size-4 text-amber-500 shrink-0" />
+                              <span>{t("notifNoValidEmailsWarning")}</span>
+                            </div>
+                          )}
 
                           {/* Available User Picker List */}
                           {canEditNotifications && availableUsers.length > 0 && (
