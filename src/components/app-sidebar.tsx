@@ -25,12 +25,13 @@ import {
   ClipboardList,
   Users,
   Settings,
-  ClockAlert,
   ChevronDown,
   QrCode,
   LifeBuoy,
   Inbox,
   Megaphone,
+  MessageSquareText,
+  BrainCircuit,
 } from "lucide-react"
 
 interface NavItem {
@@ -82,6 +83,18 @@ const NAV_GROUPS: NavGroup[] = [
         title: "Reports",
         url: "/dashboard/reports",
         icon: ChartNoAxesCombined,
+        roles: ["super_admin", "ceo", "agm", "manager"],
+      },
+      {
+        title: "Feedback Analysis",
+        url: "/dashboard/analysis",
+        icon: BrainCircuit,
+        roles: ["super_admin", "ceo", "agm", "manager"],
+      },
+      {
+        title: "Survey Responses",
+        url: "/dashboard/responses",
+        icon: MessageSquareText,
         roles: ["super_admin", "ceo", "agm", "manager"],
       },
     ],
@@ -165,13 +178,8 @@ function CollapsibleNavGroup({
     )
   }, [visibleItems, pathname])
 
-  const [isOpen, setIsOpen] = React.useState(isAnyItemActive)
-
-  React.useEffect(() => {
-    if (isAnyItemActive) {
-      setIsOpen(true)
-    }
-  }, [isAnyItemActive])
+  const [userToggledOpen, setUserToggledOpen] = React.useState<boolean | null>(null)
+  const isOpen = userToggledOpen !== null ? userToggledOpen : isAnyItemActive
 
   if (visibleItems.length === 0) return null
 
@@ -179,7 +187,7 @@ function CollapsibleNavGroup({
     <SidebarGroup className="py-1">
       <button
         type="button"
-        onClick={() => setIsOpen((prev) => !prev)}
+        onClick={() => setUserToggledOpen((prev) => (prev !== null ? !prev : !isAnyItemActive))}
         className="flex w-full items-center justify-between px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-slate-500 hover:text-slate-900 transition-colors"
       >
         <span>{t(group.titleKey)}</span>

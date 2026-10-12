@@ -12,3 +12,10 @@ export const deepseek = new OpenAI({
 });
 
 export const DEEPSEEK_MODEL = 'deepseek-v4-flash';
+
+/**
+ * Spread into a completions.create() call to disable reasoning tokens.
+ * `thinking` is a DeepSeek extension the openai SDK types do not know about;
+ * a spread (unlike an inline property) passes the excess-property check.
+ */
+export const DEEPSEEK_NO_THINKING = { thinking: { type: 'disabled' } } as const;

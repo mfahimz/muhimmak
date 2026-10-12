@@ -82,6 +82,12 @@
   --chart-5: #8B5CF6; /* violet-500 */
   --chart-6: #0EA5E9; /* sky-500 */
   --radius: 0.625rem;
+  --viz-drop-off: #2a78d6; /* categorical slot 1 (blue), validated */
+  --viz-pick-up: #eb6834; /* categorical slot 2 (orange), validated */
+  --viz-single: #2a78d6;
+  --viz-grid: #e1e0d9;
+  --viz-axis: #c3c2b7;
+  --viz-label: #898781;
   --sidebar: #FFFFFF;
   --sidebar-foreground: #0F172A;
   --sidebar-primary: #4F46E5;
@@ -122,6 +128,12 @@
   --chart-5: #8B5CF6;
   --chart-6: #0EA5E9;
   --sidebar: #111827;
+  --viz-drop-off: #3987e5;
+  --viz-pick-up: #d95926;
+  --viz-single: #3987e5;
+  --viz-grid: #2c2c2a;
+  --viz-axis: #383835;
+  --viz-label: #898781;
   --sidebar-foreground: #F8FAFC;
   --sidebar-primary: #6366F1;
   --sidebar-primary-foreground: #FFFFFF;

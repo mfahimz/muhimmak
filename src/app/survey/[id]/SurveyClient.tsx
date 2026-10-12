@@ -90,6 +90,9 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
   const timePerQuestionRef = React.useRef<Record<string, number>>({})
   const questionStartTimeRef = React.useRef<number>(Date.now())
   const closingQuestionAiRef = React.useRef<{ attempted: boolean; succeeded: boolean; latency_ms: number } | null>(null)
+  // What the customer actually saw in the closing slot. The answer is saved under the form question's id either
+  // way, so this is the only record of whether an AI generated question replaced it (used by Feedback Analysis).
+  const closingQuestionShownRef = React.useRef<{ source: 'ai' | 'static'; label?: string; type?: string; options?: string[] } | null>(null)
   const trackedQrRef = React.useRef(false)
   
   // Parse fields
@@ -323,6 +326,7 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
 
     if (isArabic) {
       // Arabic sessions skip AI and show static immediately (no loading state)
+      closingQuestionShownRef.current = { source: 'static' }
       setLockedClosingQuestion(originalField)
       return
     }
@@ -335,6 +339,12 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
 
     // If AI question is already ready, lock it immediately
     if (aiClosingQuestionStatus === 'ready' && aiClosingQuestion) {
+      closingQuestionShownRef.current = {
+        source: 'ai',
+        label: aiClosingQuestion.label,
+        type: aiClosingQuestion.type,
+        options: aiClosingQuestion.options || [],
+      }
       setLockedClosingQuestion({
         ...originalField,
         type: aiClosingQuestion.type,
@@ -346,6 +356,7 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
 
     // If AI question already failed, lock to static immediately
     if (aiClosingQuestionStatus === 'failed') {
+      closingQuestionShownRef.current = { source: 'static' }
       setLockedClosingQuestion(originalField)
       return
     }
@@ -353,6 +364,7 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
     // Otherwise, we wait up to 2500ms
     const timer = setTimeout(() => {
       // Timer expired, lock to static fallback
+      closingQuestionShownRef.current = { source: 'static' }
       setLockedClosingQuestion(originalField)
     }, 2500)
 
@@ -608,6 +620,7 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
       language_switches: languageSwitchesRef.current,
       last_seen_field_id: currentField?.id || null,
       closing_question_ai: closingQuestionAiRef.current,
+      closing_question_shown: closingQuestionShownRef.current,
     }
 
     try {
@@ -654,6 +667,7 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
         language_switches: languageSwitchesRef.current,
         last_seen_field_id: currentField?.id || null,
         closing_question_ai: closingQuestionAiRef.current,
+        closing_question_shown: closingQuestionShownRef.current,
       }
       await fetch("/api/v1/sessions/update", {
         method: "POST",
