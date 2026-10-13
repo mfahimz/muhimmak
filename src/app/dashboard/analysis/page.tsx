@@ -7,7 +7,7 @@ import { getAnalysisReport, normalizeFilters } from "@/server/services/survey-an
 import { AnalysisClient, type TabKey } from "./AnalysisClient";
 
 // Plain values cannot be imported from a client module into a server component, so the keys live here.
-const TAB_KEYS: TabKey[] = ["questions", "drivers", "trends", "voice", "followUp"];
+const TAB_KEYS: TabKey[] = ["questions", "comments", "trends", "followUp"];
 
 export default async function FeedbackAnalysisPage({
   searchParams,

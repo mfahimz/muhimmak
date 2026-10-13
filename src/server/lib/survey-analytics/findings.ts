@@ -1,6 +1,10 @@
 // Rule based findings. Deterministic, free, and identical on every load.
-// Each finding carries ids and numbers only; the client turns them into a sentence
+// Each finding carries ids and numbers only; the client turns them into a short sentence
 // in the viewer's language, so Arabic needs no AI translation.
+//
+// Every finding gets an importance on the same 0..100 scale (share of customers affected,
+// or size of a gap in points), so the top of the list is the most important regardless of type.
+// Data quality notes (unclassified or unusable comments) live in the Data notes panel, not here.
 
 import {
   FOLLOW_UP_BELOW,
@@ -15,7 +19,7 @@ import {
 type PartialReport = Omit<AnalyticsReport, 'findings'>;
 
 const SEVERITY_RANK: Record<Severity, number> = { critical: 0, warning: 1, info: 2, positive: 3 };
-const MAX_PROBLEMS = 12;
+const MAX_PROBLEMS = 10;
 const MAX_POSITIVES = 3;
 
 function r1(x: number): number {
@@ -27,15 +31,16 @@ function mean(xs: number[]): number {
 }
 
 export function buildFindings(report: PartialReport, weeklyPoints: TrendPoint[]): Finding[] {
-  const out: Array<{ f: Finding; mag: number }> = [];
-  const push = (f: Finding, mag: number) => out.push({ f, mag });
+  const out: Array<{ f: Finding; importance: number }> = [];
+  const push = (f: Finding, importance: number) => out.push({ f, importance });
 
   const { overview, previous, meta } = report;
+  const surveys = Math.max(1, overview.surveys);
   const scoredQs = report.questions.filter(
     (q) => q.type !== 'text' && q.scored >= MIN_SAMPLE && q.avgScore !== null
   );
 
-  // Negative answers (most concrete signal) and weak questions that are not already covered by one.
+  // Negative answers: the most concrete signal. Importance = share of customers who answered negatively.
   const covered = new Set<string>();
   for (const q of scoredQs) {
     const neg = q.buckets.negative;
@@ -46,12 +51,13 @@ export function buildFindings(report: PartialReport, weeklyPoints: TrendPoint[])
     const num = { pct: Math.round(share * 100), count: neg, n: q.scored, avg: q.avgScore ?? 0 };
     const severity: Severity = share >= 0.4 ? 'critical' : 'warning';
     if (q.type === 'multiple_choice' && top) {
-      push({ id: `neg:${q.id}`, type: 'negative_choice', severity, questionId: q.id, answerKey: top.key, stage: q.stage, num }, share);
+      push({ id: `neg:${q.id}`, type: 'negative_choice', severity, questionId: q.id, answerKey: top.key, stage: q.stage, num }, share * 100);
     } else {
-      push({ id: `neg:${q.id}`, type: 'negative_rating', severity, questionId: q.id, stage: q.stage, num }, share);
+      push({ id: `neg:${q.id}`, type: 'negative_rating', severity, questionId: q.id, stage: q.stage, num }, share * 100);
     }
   }
 
+  // Weak averages that no negative answer finding already explains.
   scoredQs
     .filter((q) => !covered.has(q.id) && (q.avgScore ?? 100) < POSITIVE_MIN)
     .sort((a, b) => (a.avgScore ?? 0) - (b.avgScore ?? 0))
@@ -93,9 +99,9 @@ export function buildFindings(report: PartialReport, weeklyPoints: TrendPoint[])
       if (Math.abs(delta) < 3) continue;
       const num = { delta: Math.abs(delta), current: cur.avg, previous: prev.avg, n: cur.n };
       if (delta < 0) {
-        push({ id: `trend:${stage}`, type: 'stage_trend_down', severity: Math.abs(delta) >= 6 ? 'critical' : 'warning', stage, num }, Math.abs(delta));
+        push({ id: `trend:${stage}`, type: 'stage_trend_down', severity: Math.abs(delta) >= 6 ? 'critical' : 'warning', stage, num }, Math.abs(delta) * 5);
       } else {
-        push({ id: `trend:${stage}`, type: 'stage_trend_up', severity: 'positive', stage, num }, Math.abs(delta));
+        push({ id: `trend:${stage}`, type: 'stage_trend_up', severity: 'positive', stage, num }, Math.abs(delta) * 5);
       }
     }
   }
@@ -121,7 +127,7 @@ export function buildFindings(report: PartialReport, weeklyPoints: TrendPoint[])
           lang: gap > 0 ? 'ar' : 'en',
           num: { gap: Math.abs(gap), ar: ar.avg, en: en.avg, arN: ar.n, enN: en.n },
         },
-        Math.abs(gap)
+        Math.abs(gap) * 2
       );
     }
   }
@@ -156,7 +162,7 @@ export function buildFindings(report: PartialReport, weeklyPoints: TrendPoint[])
     );
   }
 
-  // Problems that come together, and which answers drag the rest of the survey down.
+  // Problems that come together, and how much an extra problem costs.
   report.compound.slice(0, 2).forEach((c, i) =>
     push(
       {
@@ -169,9 +175,20 @@ export function buildFindings(report: PartialReport, weeklyPoints: TrendPoint[])
         secondAnswerKey: c.b.key,
         num: { customers: c.customers, avg: c.avgScore, overall: overview.avgScore ?? 0 },
       },
-      c.customers * 3
+      (c.customers / surveys) * 100
     )
   );
+
+  const load = report.negativeLoad;
+  if (load.zero.n >= 5 && load.twoPlus.n >= 3 && load.zero.avg !== null && load.twoPlus.avg !== null) {
+    const gap = r1(load.zero.avg - load.twoPlus.avg);
+    if (gap >= 10) {
+      push(
+        { id: 'load', type: 'negative_load', severity: 'info', num: { low: load.twoPlus.avg, high: load.zero.avg, n: load.twoPlus.n } },
+        gap
+      );
+    }
+  }
 
   report.questions
     .filter((q) => q.driver.gap !== null && q.driver.gap >= 8)
@@ -187,7 +204,7 @@ export function buildFindings(report: PartialReport, weeklyPoints: TrendPoint[])
           stage: q.stage,
           num: { gap: q.driver.gap ?? 0, n: q.driver.negativeN },
         },
-        (q.driver.gap ?? 0) / 2
+        (q.driver.gap ?? 0) * 2
       )
     );
 
@@ -200,7 +217,7 @@ export function buildFindings(report: PartialReport, weeklyPoints: TrendPoint[])
         severity: report.followUps.total >= 5 ? 'warning' : 'info',
         num: { count: report.followUps.total, below: FOLLOW_UP_BELOW },
       },
-      report.followUps.total
+      (report.followUps.total / surveys) * 100
     );
   }
 
@@ -216,7 +233,7 @@ export function buildFindings(report: PartialReport, weeklyPoints: TrendPoint[])
       if (earlier >= 3 && recent <= earlier * 0.6) {
         push(
           { id: 'participation', type: 'participation_drop', severity: 'warning', num: { recent: r1(recent), earlier: r1(earlier) } },
-          (earlier - recent) * 2
+          ((earlier - recent) / earlier) * 50
         );
       }
     }
@@ -224,28 +241,12 @@ export function buildFindings(report: PartialReport, weeklyPoints: TrendPoint[])
 
   const f = overview.funnel;
   if (f.completionRate !== null && f.started >= 20 && f.completionRate < 85) {
-    push(
-      { id: 'completion', type: 'completion', severity: 'info', num: { rate: f.completionRate, declined: f.declined, unfinished: f.unfinished + f.abandoned } },
-      100 - f.completionRate
-    );
+    push({ id: 'completion', type: 'completion', severity: 'info', num: { rate: f.completionRate } }, (100 - f.completionRate) / 2);
   }
 
-  const junk = overview.comments.total - overview.comments.usable;
-  if (overview.comments.total >= 10 && junk / overview.comments.total >= 0.2) {
-    push({ id: 'junk', type: 'junk_comments', severity: 'info', num: { junk, total: overview.comments.total } }, junk);
-  }
-
-  const unclassified = overview.comments.usable - overview.comments.classified;
-  if (unclassified >= 5) {
-    push({ id: 'unclassified', type: 'unclassified_comments', severity: 'info', num: { n: unclassified } }, unclassified);
-  }
-
-  const aiFollow = report.dataQuality.aiFollowUpAnswers + report.dataQuality.aiFollowUpUncertain;
-  if (aiFollow >= 3) {
-    push({ id: 'ai_follow', type: 'ai_follow_up_data', severity: 'info', num: { n: aiFollow } }, aiFollow);
-  }
-
-  const sorted = out.sort((a, b) => SEVERITY_RANK[a.f.severity] - SEVERITY_RANK[b.f.severity] || b.mag - a.mag);
+  const sorted = out.sort(
+    (a, b) => SEVERITY_RANK[a.f.severity] - SEVERITY_RANK[b.f.severity] || b.importance - a.importance
+  );
   // Problems first; good news is kept separate so it is never crowded out by a long problem list.
   const problems = sorted.filter((x) => x.f.severity !== 'positive').slice(0, MAX_PROBLEMS);
   const positives = sorted.filter((x) => x.f.severity === 'positive').slice(0, MAX_POSITIVES);

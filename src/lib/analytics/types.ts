@@ -214,11 +214,9 @@ export type FindingType =
   | 'compound'
   | 'driver'
   | 'follow_up'
+  | 'negative_load'
   | 'participation_drop'
-  | 'completion'
-  | 'junk_comments'
-  | 'unclassified_comments'
-  | 'ai_follow_up_data';
+  | 'completion';
 
 export type Severity = 'critical' | 'warning' | 'info' | 'positive';
 

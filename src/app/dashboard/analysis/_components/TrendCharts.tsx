@@ -6,8 +6,6 @@
 
 import * as React from "react";
 import {
-  Bar,
-  BarChart,
   CartesianGrid,
   Line,
   LineChart,
@@ -16,7 +14,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import type { TrendPoint, WeekdayPoint } from "@/lib/analytics/types";
+import type { TrendPoint } from "@/lib/analytics/types";
 
 interface TooltipRow {
   name: string;
@@ -83,70 +81,6 @@ export function ScoreTrendChart({ points, names, formatDate, formatNum }: ScoreT
           <Line type="linear" dataKey="drop" stroke="var(--viz-drop-off)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" connectNulls dot={{ r: 4, fill: "var(--viz-drop-off)", stroke: SURFACE, strokeWidth: 2 }} activeDot={{ r: 6, stroke: SURFACE, strokeWidth: 2 }} isAnimationActive={false} />
           <Line type="linear" dataKey="pick" stroke="var(--viz-pick-up)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" connectNulls dot={{ r: 4, fill: "var(--viz-pick-up)", stroke: SURFACE, strokeWidth: 2 }} activeDot={{ r: 6, stroke: SURFACE, strokeWidth: 2 }} isAnimationActive={false} />
         </LineChart>
-      </ResponsiveContainer>
-    </div>
-  );
-}
-
-interface SurveysChartProps {
-  points: TrendPoint[];
-  name: string;
-  formatDate: (key: string) => string;
-  formatNum: (v: number | null | undefined) => string;
-}
-
-export function SurveysChart({ points, name, formatDate, formatNum }: SurveysChartProps) {
-  const data = points.map((p) => ({ key: p.key, surveys: p.surveys, avg: p.avg }));
-  return (
-    <div dir="ltr" className="h-48 w-full">
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 4 }}>
-          <CartesianGrid vertical={false} stroke={GRID} />
-          <XAxis dataKey="key" tickFormatter={formatDate} tick={AXIS_TICK} axisLine={{ stroke: AXIS }} tickLine={false} interval="preserveStartEnd" minTickGap={24} />
-          <YAxis allowDecimals={false} tickFormatter={(v: number) => formatNum(v)} tick={AXIS_TICK} axisLine={false} tickLine={false} width={36} />
-          <Tooltip
-            cursor={{ fill: GRID, opacity: 0.5 }}
-            content={({ active, payload }) => {
-              if (!active || !payload?.length) return null;
-              const d = payload[0].payload as (typeof data)[number];
-              return <ChartTooltip title={formatDate(d.key)} rows={[{ name, value: formatNum(d.surveys), color: "var(--viz-single)" }]} />;
-            }}
-          />
-          <Bar dataKey="surveys" fill="var(--viz-single)" radius={[4, 4, 0, 0]} maxBarSize={24} isAnimationActive={false} />
-        </BarChart>
-      </ResponsiveContainer>
-    </div>
-  );
-}
-
-interface WeekdayChartProps {
-  points: WeekdayPoint[];
-  dayName: (day: number) => string;
-  names: { surveys: string; avg: string };
-  formatNum: (v: number | null | undefined) => string;
-}
-
-export function WeekdayChart({ points, dayName, names, formatNum }: WeekdayChartProps) {
-  const data = points.map((p) => ({ day: p.day, label: dayName(p.day), surveys: p.surveys, avg: p.avg }));
-  return (
-    <div dir="ltr" className="h-44 w-full">
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 4 }}>
-          <CartesianGrid vertical={false} stroke={GRID} />
-          <XAxis dataKey="label" tick={AXIS_TICK} axisLine={{ stroke: AXIS }} tickLine={false} interval={0} />
-          <YAxis allowDecimals={false} tickFormatter={(v: number) => formatNum(v)} tick={AXIS_TICK} axisLine={false} tickLine={false} width={36} />
-          <Tooltip
-            cursor={{ fill: GRID, opacity: 0.5 }}
-            content={({ active, payload }) => {
-              if (!active || !payload?.length) return null;
-              const d = payload[0].payload as (typeof data)[number];
-              const rows: TooltipRow[] = [{ name: names.surveys, value: formatNum(d.surveys), color: "var(--viz-single)" }];
-              if (d.avg !== null) rows.push({ name: names.avg, value: formatNum(d.avg), color: "var(--viz-axis)" });
-              return <ChartTooltip title={d.label} rows={rows} />;
-            }}
-          />
-          <Bar dataKey="surveys" fill="var(--viz-single)" radius={[4, 4, 0, 0]} maxBarSize={24} isAnimationActive={false} />
-        </BarChart>
       </ResponsiveContainer>
     </div>
   );

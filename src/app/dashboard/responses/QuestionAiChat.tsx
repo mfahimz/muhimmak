@@ -22,7 +22,7 @@ export function QuestionAiChat({ questionId, startDate, endDate, visitStage, dis
   const t = useTranslations("Responses");
   const locale = useLocale();
 
-  const [open, setOpen] = React.useState<boolean>(true);
+  const [open, setOpen] = React.useState<boolean>(false);
   const [scope, setScope] = React.useState<Scope>("question");
 
   const chat = useAiChat({

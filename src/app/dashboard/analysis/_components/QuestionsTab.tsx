@@ -1,312 +1,138 @@
 "use client";
 
 import * as React from "react";
-import { CheckCircle2, ChevronDown, MessageCircleQuestion, MinusCircle, XCircle } from "lucide-react";
-import { NEGATIVE_MAX, POSITIVE_MIN, type AnalyticsReport, type Bucket, type QuestionAnalysis, type StageKey } from "@/lib/analytics/types";
-import { Button } from "@/components/ui/button";
+import { ChevronDown, MessageCircleQuestion } from "lucide-react";
+import type { AnalyticsReport, OptionStat, QuestionAnalysis, StageKey } from "@/lib/analytics/types";
 import { useFmt } from "./format";
-import { BucketBar, Chip, Delta, Meter, ScoreBadge } from "./primitives";
-
-const BUCKET_ICON = { positive: CheckCircle2, neutral: MinusCircle, negative: XCircle } as const;
-const BUCKET_COLOR: Record<Bucket, string> = { positive: "text-success", neutral: "text-warning", negative: "text-danger" };
-const BUCKET_FILL: Record<Bucket, string> = { positive: "bg-success", neutral: "bg-warning", negative: "bg-danger" };
-
-type SortMode = "survey" | "attention";
+import { BUCKET_FILL, BUCKET_ORDER, Card, Meter, StackBar } from "./primitives";
 
 interface QuestionsTabProps {
   report: AnalyticsReport;
   onAsk: (prompt: string, questionId: string | null) => void;
-  onOpenVoice: (questionId: string) => void;
+  onOpenComments: () => void;
 }
 
-function Histogram({ q }: { q: QuestionAnalysis }) {
-  const { t, num } = useFmt();
-  const max = Math.max(1, ...q.options.map((o) => o.count));
+function AnswerRow({ o, label }: { o: OptionStat; label: string }) {
+  const { num, pct } = useFmt();
   return (
-    <div>
-      <div className="flex h-28 items-end gap-1.5" role="img" aria-label={t("q.distribution")}>
-        {q.options.map((o) => {
-          const bucket = o.bucket ?? "neutral";
-          const height = o.count === 0 ? 0 : Math.max(6, (o.count / max) * 100);
-          return (
-            <div key={o.key} className="flex h-full flex-1 flex-col items-center justify-end gap-1" title={`${o.key}: ${num(o.count)}`}>
-              <span className="text-[11px] font-semibold text-foreground">{o.count === max && o.count > 0 ? num(o.count) : ""}</span>
-              <div className={`w-full max-w-6 rounded-t-sm ${BUCKET_FILL[bucket]}`} style={{ height: `${height}%` }} />
-            </div>
-          );
-        })}
-      </div>
-      <div className="mt-1 flex gap-1.5">
-        {q.options.map((o) => (
-          <span key={o.key} className="flex-1 text-center text-[11px] text-muted-foreground">
-            {num(o.key)}
-          </span>
-        ))}
-      </div>
-      <table className="sr-only">
-        <tbody>
-          {q.options.map((o) => (
-            <tr key={o.key}>
-              <td>{num(o.key)}</td>
-              <td>{num(o.count)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function OptionsTable({ q }: { q: QuestionAnalysis }) {
-  const { t, num, pct, isAr } = useFmt();
-  const hasRest = q.options.some((o) => o.restAvg !== null);
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-xs">
-        <thead>
-          <tr className="text-muted-foreground">
-            <th className="py-1.5 text-start font-semibold">{t("q.answer")}</th>
-            <th className="py-1.5 text-center font-semibold">{t("q.customers")}</th>
-            <th className="w-40 py-1.5 text-start font-semibold">{t("q.share")}</th>
-            {hasRest && <th className="py-1.5 text-center font-semibold">{t("q.restAvg")}</th>}
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-border">
-          {q.options.map((o) => {
-            const Icon = o.bucket ? BUCKET_ICON[o.bucket] : null;
-            return (
-              <tr key={o.key} className={o.count === 0 ? "text-muted-foreground" : "text-foreground"}>
-                <td className="py-2 pe-3">
-                  <span className="inline-flex items-center gap-1.5">
-                    {Icon && o.bucket && <Icon className={`size-3.5 shrink-0 ${BUCKET_COLOR[o.bucket]}`} aria-hidden />}
-                    {isAr && o.labelAr ? o.labelAr : o.labelEn}
-                  </span>
-                </td>
-                <td className="py-2 text-center font-semibold">{num(o.count)}</td>
-                <td className="py-2">
-                  <div className="flex items-center gap-2">
-                    <Meter value={o.pct} className={o.bucket ? BUCKET_FILL[o.bucket] : "bg-primary"} />
-                    <span className="w-10 shrink-0 text-end">{pct(o.pct)}</span>
-                  </div>
-                </td>
-                {hasRest && <td className="py-2 text-center">{o.restAvg !== null ? num(o.restAvg) : ""}</td>}
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function QuestionRow({
-  q,
-  report,
-  open,
-  onToggle,
-  onAsk,
-  onOpenVoice,
-}: {
-  q: QuestionAnalysis;
-  report: AnalyticsReport;
-  open: boolean;
-  onToggle: () => void;
-  onAsk: QuestionsTabProps["onAsk"];
-  onOpenVoice: QuestionsTabProps["onOpenVoice"];
-}) {
-  const { t, num, pct, label, dateTime } = useFmt();
-  const isText = q.type === "text";
-  const delta = q.avgScore !== null && q.previousAvgScore !== null ? q.avgScore - q.previousAvgScore : null;
-  const comments = isText ? report.comments.filter((c) => c.questionId === q.id && c.usable).slice(0, 5) : [];
-
-  return (
-    <li className="rounded-xl border border-border bg-card shadow-xs">
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={open}
-        className="flex w-full items-start gap-3 p-4 text-start"
-      >
-        <div className="min-w-0 flex-1">
-          <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
-            <Chip>{t(`type.${q.type}`)}</Chip>
-            {q.conditional && <Chip>{t("q.followUp")}</Chip>}
-          </div>
-          <p className="text-sm font-semibold leading-snug text-foreground">{label(q)}</p>
-          <div className="mt-3 max-w-xl">
-            {q.scored > 0 ? (
-              <BucketBar counts={q.buckets} />
-            ) : isText && q.text ? (
-              <p className="text-xs text-muted-foreground">
-                {t("q.textSummary", { usable: num(q.text.usable), total: num(q.text.total), classified: num(q.text.classified) })}
-              </p>
-            ) : null}
-          </div>
-        </div>
-        <div className="shrink-0 text-end">
-          <ScoreBadge score={q.avgScore} />
-          <p className="mt-1 text-[11px] text-muted-foreground">
-            {t("q.answers", { n: num(q.answered), nRaw: q.answered })}
-            {q.responseRate !== null && !q.conditional ? ` · ${t("q.responded", { rate: pct(q.responseRate) })}` : ""}
-          </p>
-          <div className="mt-0.5 flex justify-end">
-            <Delta value={delta} />
-          </div>
-        </div>
-        <ChevronDown className={`mt-1 size-4 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} aria-hidden />
-      </button>
-
-      {open && (
-        <div className="space-y-4 border-t border-border p-4">
-          {q.type === "multiple_choice" && <OptionsTable q={q} />}
-          {(q.type === "star_rating" || q.type === "numeric_scale") && (
-            <div className="grid gap-4 md:grid-cols-[1fr_auto] md:items-end">
-              <div dir="ltr">
-                <Histogram q={q} />
-              </div>
-              {q.avgRaw !== null && q.scaleMax && (
-                <div className="text-center md:px-6">
-                  <p className="text-3xl font-bold text-foreground">{num(q.avgRaw)}</p>
-                  <p className="text-xs text-muted-foreground">{t("q.outOfScale", { max: num(q.scaleMax) })}</p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {!isText && (q.byLanguage.ar.n > 0 || q.byLanguage.en.n > 0) && (
-            <div className="grid grid-cols-2 gap-3 text-xs">
-              {(["ar", "en"] as const).map((l) => {
-                const s = q.byLanguage[l];
-                return (
-                  <div key={l} className="rounded-lg bg-muted/60 p-3">
-                    <p className="font-semibold text-foreground">{t(`lang.${l}`)}</p>
-                    <p className="mt-0.5 text-muted-foreground">
-                      {s.n > 0
-                        ? t("q.langStat", { avg: num(s.avgScore), n: num(s.n), neg: pct(s.negativePct) })
-                        : t("q.noAnswers")}
-                    </p>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {q.driver.gap !== null && !isText && (
-            <p className="text-xs text-muted-foreground">
-              {q.driver.gap >= 0
-                ? t("q.driverLower", { gap: num(Math.abs(q.driver.gap)), n: num(q.driver.negativeN) })
-                : t("q.driverNone", { n: num(q.driver.negativeN) })}
-            </p>
-          )}
-
-          {isText && (
-            <div className="space-y-2">
-              {comments.map((c) => (
-                <blockquote
-                  key={`${c.responseId}:${c.questionId}`}
-                  dir="auto"
-                  className="rounded-lg border-s-2 border-primary bg-muted/60 px-3 py-2 text-sm text-foreground"
-                >
-                  {c.text}
-                  <span className="mt-1 block text-[11px] text-muted-foreground">
-                    {dateTime(c.submittedAt)} · {t(`lang.${c.language}`)}
-                    {c.provenance !== "form" ? ` · ${t("voice.aiFollowUpShort")}` : ""}
-                  </span>
-                </blockquote>
-              ))}
-              {comments.length === 0 && <p className="text-xs text-muted-foreground">{t("q.noUsableComments")}</p>}
-            </div>
-          )}
-
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="gap-1.5 text-xs"
-              onClick={() => onAsk(t("q.askPrompt", { question: label(q) }), q.id)}
-            >
-              <MessageCircleQuestion className="size-3.5" aria-hidden />
-              {t("q.askAbout")}
-            </Button>
-            {isText && (
-              <Button type="button" variant="ghost" size="sm" className="text-xs" onClick={() => onOpenVoice(q.id)}>
-                {t("q.seeAllComments")}
-              </Button>
-            )}
-          </div>
-        </div>
-      )}
+    <li className="grid grid-cols-[minmax(0,1fr)_5rem_4.5rem] items-center gap-3 text-sm sm:grid-cols-[minmax(0,1fr)_8rem_4.5rem]">
+      <span className={`inline-flex min-w-0 items-center gap-2 ${o.count === 0 ? "text-muted-foreground" : "text-foreground"}`}>
+        <span className={`size-1.5 shrink-0 rounded-full ${o.bucket ? BUCKET_FILL[o.bucket] : "bg-muted-foreground/40"}`} aria-hidden />
+        <span className="truncate">{label}</span>
+      </span>
+      <Meter value={o.pct} className={o.bucket ? BUCKET_FILL[o.bucket] : "bg-primary"} />
+      <span className="text-end text-xs text-muted-foreground">
+        {num(o.count)} · {pct(o.pct)}
+      </span>
     </li>
   );
 }
 
-export function QuestionsTab({ report, onAsk, onOpenVoice }: QuestionsTabProps) {
-  const { t, num } = useFmt();
-  const [sort, setSort] = React.useState<SortMode>("survey");
-  const [open, setOpen] = React.useState<Set<string>>(new Set());
+function QuestionDetail({ q, onAsk }: { q: QuestionAnalysis; onAsk: QuestionsTabProps["onAsk"] }) {
+  const { t, num, label, isAr } = useFmt();
+  const isScale = q.type === "star_rating" || q.type === "numeric_scale";
+  // Scales list only the values somebody chose, highest first. Choices keep the form order.
+  const rows = isScale ? q.options.filter((o) => o.count > 0).sort((a, b) => Number(b.key) - Number(a.key)) : q.options;
+  const { ar, en } = q.byLanguage;
 
-  const toggle = (id: string) =>
-    setOpen((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+  return (
+    <div className="space-y-4 border-t border-border bg-muted/30 px-4 py-4">
+      <ul className="max-w-xl space-y-2">
+        {rows.map((o) => (
+          <AnswerRow key={o.key} o={o} label={isScale ? t("q.rated", { value: num(o.key) }) : isAr && o.labelAr ? o.labelAr : o.labelEn} />
+        ))}
+      </ul>
+
+      <div className="space-y-1 text-xs text-muted-foreground">
+        <p>
+          {t("q.answers", { n: num(q.answered), nRaw: q.answered })}
+          {ar.n > 0 && en.n > 0 && ` · ${t("q.langLine", { ar: num(ar.avgScore), en: num(en.avgScore) })}`}
+        </p>
+        {q.driver.gap !== null && <p>{q.driver.gap >= 5 ? t("q.driverLower", { gap: num(q.driver.gap) }) : t("q.driverNone")}</p>}
+      </div>
+
+      <button
+        type="button"
+        onClick={() => onAsk(t("q.askPrompt", { question: label(q) }), q.id)}
+        className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
+      >
+        <MessageCircleQuestion className="size-4" aria-hidden />
+        {t("q.askAbout")}
+      </button>
+    </div>
+  );
+}
+
+export function QuestionsTab({ report, onAsk, onOpenComments }: QuestionsTabProps) {
+  const { t, num, pct, label } = useFmt();
+  const [open, setOpen] = React.useState<string | null>(null);
 
   const groups = (["drop_off", "pick_up", "general"] as StageKey[])
-    .map((stage) => {
-      const all = report.questions.filter((q) => q.stage === stage);
-      const structured = all.filter((q) => q.type !== "text");
-      const written = all.filter((q) => q.type === "text");
-      const ordered =
-        sort === "attention"
-          ? [...structured].sort((a, b) => (a.avgScore ?? 101) - (b.avgScore ?? 101))
-          : structured;
-      return { stage, items: [...ordered, ...written] };
-    })
+    .map((stage) => ({ stage, items: report.questions.filter((q) => q.stage === stage && q.type !== "text") }))
     .filter((g) => g.items.length > 0);
+  const writtenCount = report.questions.filter((q) => q.type === "text").length;
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="max-w-2xl text-xs text-muted-foreground">{t("q.legend", { positive: num(POSITIVE_MIN), negative: num(NEGATIVE_MAX) })}</p>
-        <div className="flex items-center rounded-lg border border-border bg-muted p-0.5 text-xs font-medium">
-          {(["survey", "attention"] as SortMode[]).map((m) => (
-            <button
-              key={m}
-              type="button"
-              onClick={() => setSort(m)}
-              className={`rounded-md px-3 py-1.5 transition-all ${
-                sort === m ? "bg-card font-semibold text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {t(`q.sort.${m}`)}
-            </button>
-          ))}
-        </div>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+        {BUCKET_ORDER.map((b) => (
+          <span key={b} className="inline-flex items-center gap-1.5">
+            <span className={`size-2 rounded-full ${BUCKET_FILL[b]}`} aria-hidden />
+            {t(`bucket.${b}`)}
+          </span>
+        ))}
+        <span>{t("q.tap")}</span>
       </div>
 
       {groups.map((g) => (
-        <section key={g.stage} aria-labelledby={`stage-${g.stage}`}>
-          <h4 id={`stage-${g.stage}`} className="mb-2 text-sm font-bold text-foreground">
-            {t(`q.group.${g.stage}`)} <span className="font-normal text-muted-foreground">({num(g.items.length)})</span>
+        <section key={g.stage} aria-labelledby={`group-${g.stage}`}>
+          <h4 id={`group-${g.stage}`} className="mb-2 text-xs font-bold text-muted-foreground">
+            {t(`q.group.${g.stage}`)}
           </h4>
-          <ul className="space-y-2">
-            {g.items.map((q) => (
-              <QuestionRow
-                key={q.id}
-                q={q}
-                report={report}
-                open={open.has(q.id)}
-                onToggle={() => toggle(q.id)}
-                onAsk={onAsk}
-                onOpenVoice={onOpenVoice}
-              />
-            ))}
-          </ul>
+          <Card className="overflow-hidden p-0">
+            <ul className="divide-y divide-border">
+              {g.items.map((q) => {
+                const isOpen = open === q.id;
+                const negPct = q.scored > 0 ? Math.round((q.buckets.negative / q.scored) * 100) : 0;
+                return (
+                  <li key={q.id}>
+                    <button
+                      type="button"
+                      onClick={() => setOpen(isOpen ? null : q.id)}
+                      aria-expanded={isOpen}
+                      className="flex w-full items-center gap-4 px-4 py-3 text-start transition-colors hover:bg-muted/40"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium leading-snug text-foreground">{label(q)}</p>
+                        <div className="mt-2 max-w-md">
+                          <StackBar counts={q.buckets} />
+                        </div>
+                      </div>
+                      <div className="shrink-0 text-end">
+                        <p className="text-lg font-bold leading-none text-foreground">{num(q.avgScore)}</p>
+                        <p className="mt-1 text-[11px] text-muted-foreground">
+                          {negPct > 0 ? t("q.negativeShort", { pct: pct(negPct) }) : t("q.answers", { n: num(q.answered), nRaw: q.answered })}
+                        </p>
+                      </div>
+                      <ChevronDown className={`size-4 shrink-0 text-muted-foreground transition-transform ${isOpen ? "rotate-180" : ""}`} aria-hidden />
+                    </button>
+                    {isOpen && <QuestionDetail q={q} onAsk={onAsk} />}
+                  </li>
+                );
+              })}
+            </ul>
+          </Card>
         </section>
       ))}
+
+      {writtenCount > 0 && (
+        <p className="text-xs text-muted-foreground">
+          {t("q.writtenNote")}{" "}
+          <button type="button" onClick={onOpenComments} className="font-medium text-primary hover:underline">
+            {t("q.openComments")}
+          </button>
+        </p>
+      )}
     </div>
   );
 }

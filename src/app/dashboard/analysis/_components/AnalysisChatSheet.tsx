@@ -20,7 +20,7 @@ export function AnalysisChatSheet({ open, onOpenChange, chat, focusLabel, onClea
   const { t, isAr } = useFmt();
   const suggestions = focusLabel
     ? [t("chat.focusS1"), t("chat.focusS2"), t("chat.focusS3")]
-    : [t("chat.s1"), t("chat.s2"), t("chat.s3"), t("chat.s4"), t("chat.s5")];
+    : [t("chat.s1"), t("chat.s2"), t("chat.s3")];
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>

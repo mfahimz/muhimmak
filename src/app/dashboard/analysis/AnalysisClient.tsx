@@ -10,16 +10,14 @@ import { useAiChat } from "@/components/dashboard/ai-chat/useAiChat";
 import { toArabicNumerals } from "@/lib/utils/arabic-numerals";
 import type { AnalyticsReport, InsightsResult, Stage } from "@/lib/analytics/types";
 import { AnalysisChatSheet } from "./_components/AnalysisChatSheet";
+import { CommentsTab } from "./_components/CommentsTab";
 import { DataNotes } from "./_components/DataNotes";
-import { DriversTab } from "./_components/DriversTab";
-import { FindingsList } from "./_components/FindingsList";
 import { FollowUpTab } from "./_components/FollowUpTab";
 import { InsightsPanel, type AiRunState } from "./_components/InsightsPanel";
-import { KpiTiles } from "./_components/KpiTiles";
+import { Overview } from "./_components/Overview";
 import { QuestionsTab } from "./_components/QuestionsTab";
 import { EmptyState } from "./_components/primitives";
 import { TrendsTab } from "./_components/TrendsTab";
-import { VoiceTab } from "./_components/VoiceTab";
 import { findQuestion } from "./_components/format";
 
 interface Filters {
@@ -28,8 +26,8 @@ interface Filters {
   visitStage: Stage | "all";
 }
 
-export type TabKey = "questions" | "drivers" | "trends" | "voice" | "followUp";
-const TABS: TabKey[] = ["questions", "drivers", "trends", "voice", "followUp"];
+export type TabKey = "questions" | "comments" | "trends" | "followUp";
+const TABS: TabKey[] = ["questions", "comments", "trends", "followUp"];
 
 interface AnalysisClientProps {
   initialReport: AnalyticsReport;
@@ -85,7 +83,7 @@ export function AnalysisClient({ initialReport, initialFilters, aiConfigured, in
   const [loading, setLoading] = React.useState(false);
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [tab, setTab] = React.useState<TabKey>(initialTab);
-  const [voice, setVoice] = React.useState<{ key: number; questionId: string | null }>({ key: 0, questionId: null });
+  const [commentsKey, setCommentsKey] = React.useState(0);
 
   // AI report: remembered per browser tab (sessionStorage), never read during server render.
   const isClient = React.useSyncExternalStore(noopSubscribe, () => true, () => false);
@@ -201,7 +199,7 @@ export function AnalysisClient({ initialReport, initialFilters, aiConfigured, in
       await classifyAll({ ...runFilters, locale });
       if (sameFilters(filtersRef.current, runFilters)) {
         await load(runFilters);
-        toast.success(t("voice.classified"));
+        toast.success(t("c.classified"));
       }
     } catch (err: unknown) {
       toast.error((err as Error).message || t("ai.error"));
@@ -224,9 +222,9 @@ export function AnalysisClient({ initialReport, initialFilters, aiConfigured, in
     setFocusId(null);
   };
 
-  const openVoice = (questionId: string | null) => {
-    setVoice((v) => ({ key: v.key + 1, questionId }));
-    setTab("voice");
+  const openComments = () => {
+    setCommentsKey((k) => k + 1);
+    setTab("comments");
   };
 
   const focusQuestion = findQuestion(report.questions, focusId ?? undefined);
@@ -281,8 +279,7 @@ export function AnalysisClient({ initialReport, initialFilters, aiConfigured, in
           <EmptyState title={t("noData")} description={t("noDataDesc")} />
         ) : (
           <>
-            <KpiTiles report={report} />
-            <FindingsList report={report} onAsk={ask} />
+            <Overview report={report} onAsk={ask} />
             <InsightsPanel report={report} state={aiState} result={insights} error={aiError} disabled={aiDisabled} onGenerate={runAi} />
 
             <div>
@@ -309,13 +306,19 @@ export function AnalysisClient({ initialReport, initialFilters, aiConfigured, in
                   </button>
                 ))}
               </div>
-              <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`} className="pt-4">
-                {tab === "questions" && <QuestionsTab report={report} onAsk={ask} onOpenVoice={openVoice} />}
-                {tab === "drivers" && <DriversTab report={report} />}
-                {tab === "trends" && <TrendsTab report={report} />}
-                {tab === "voice" && (
-                  <VoiceTab key={voice.key} report={report} initialQuestionId={voice.questionId} aiBusy={classifying || aiState === "classifying" || aiState === "writing"} onClassify={runClassify} />
+              <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`} className="pt-5">
+                {tab === "questions" && <QuestionsTab report={report} onAsk={ask} onOpenComments={openComments} />}
+                {tab === "comments" && (
+                  <CommentsTab
+                    key={commentsKey}
+                    report={report}
+                    initialQuestionId={null}
+                    aiBusy={classifying || aiState === "classifying" || aiState === "writing"}
+                    aiDisabled={!aiConfigured}
+                    onClassify={runClassify}
+                  />
                 )}
+                {tab === "trends" && <TrendsTab report={report} />}
                 {tab === "followUp" && <FollowUpTab report={report} />}
               </div>
             </div>
