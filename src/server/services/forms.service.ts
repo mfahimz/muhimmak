@@ -149,16 +149,16 @@ Return ONLY a raw JSON array matching this exact shape. Do NOT wrap it in markdo
 Required JSON Structure:
 [
   {
-    "type": "star_rating" | "text" | "multiple_choice",
+    "type": "star_rating" | "text" | "multiple_choice" | "matrix_rating",
     "label": "Question text here",
     "options": ["Option 1", "Option 2"]
   }
 ]
 
 Constraints:
-1. "type" can only be "star_rating", "text", or "multiple_choice".
+1. "type" can only be "star_rating", "text", "multiple_choice", or "matrix_rating".
 2. "options" must be an empty array [] if type is "star_rating" or "text".
-3. "options" must contain 2 to 4 options if type is "multiple_choice".
+3. "options" must contain 2 to 4 options if type is "multiple_choice", or 2 to 5 sub-items to score out of 5 if type is "matrix_rating".
 4. Do NOT include id, order, weight, optionScores, required, or dependsOn.`;
 
     let content: string;
@@ -227,15 +227,15 @@ Return ONLY a raw JSON object matching this exact shape. Do NOT wrap it in markd
 
 Required JSON Structure:
 {
-  "type": "star_rating" | "text" | "multiple_choice",
+  "type": "star_rating" | "text" | "multiple_choice" | "matrix_rating",
   "label": "Question text here",
   "options": ["Option 1", "Option 2"]
 }
 
 Constraints:
-1. "type" can only be "star_rating", "text", or "multiple_choice".
+1. "type" can only be "star_rating", "text", "multiple_choice", or "matrix_rating".
 2. "options" must be an empty array [] if type is "star_rating" or "text".
-3. "options" must contain 2 to 4 options if type is "multiple_choice".
+3. "options" must contain 2 to 4 options if type is "multiple_choice", or 2 to 5 sub-items if type is "matrix_rating".
 4. Do NOT include id, order, weight, optionScores, required, or dependsOn.`;
 
     let content: string;
@@ -287,11 +287,11 @@ export async function suggestWeights(request: Request): Promise<NextResponse> {
     const systemPrompt = 'You are a database and API server that only returns raw JSON objects.';
 
     const userPrompt = `You are a professional survey and feedback designer.
-Analyze the following scoreable questions for a customer satisfaction survey. Questions can be of type "star_rating", "multiple_choice", or "text" (where text answers are evaluated by AI for sentiment and relevance).
+Analyze the following scoreable questions for a customer satisfaction survey. Questions can be of type "star_rating", "numeric_scale", "matrix_rating" (multiple sub-items each scored 0-5 by the customer, averaged into the question score), "multiple_choice", or "text" (where text answers are evaluated by AI for sentiment and relevance).
 Provide:
 1. A suggested weight (percentage) for each question such that the sum of all weights across all these questions is EXACTLY 100.
 2. For multiple choice questions only, suggest a score from 0 to 100 for each option based on customer satisfaction (e.g. "Excellent" = 100, "Good" = 75, "Neutral" = 50, "Poor" = 25, "Terrible" = 0, or "Yes" = 100, "No" = 0).
-3. Do NOT include optionScores for "star_rating" or "text" questions in the final output. Only "multiple_choice" questions should be present in the optionScores mapping.
+3. Do NOT include optionScores for "star_rating", "numeric_scale", "matrix_rating", or "text" questions in the final output. Only "multiple_choice" questions should be present in the optionScores mapping.
 
 Questions:
 ${JSON.stringify(questions, null, 2)}
@@ -465,7 +465,11 @@ export async function suggestBranching(request: Request): Promise<NextResponse> 
     }
 
     const possibleSources = questions.filter(
-      (q: any) => q.type === 'multiple_choice' || q.type === 'star_rating' || q.type === 'numeric_scale'
+      (q: any) =>
+        q.type === 'multiple_choice' ||
+        q.type === 'star_rating' ||
+        q.type === 'numeric_scale' ||
+        q.type === 'matrix_rating'
     );
 
     if (possibleSources.length === 0) {
@@ -478,7 +482,7 @@ export async function suggestBranching(request: Request): Promise<NextResponse> 
 Analyze the following ordered list of feedback questions:
 ${JSON.stringify(questions, null, 2)}
 
-Only these questions are valid condition sources (multiple_choice or star_rating):
+Only these questions are valid condition sources (multiple_choice, star_rating, numeric_scale, or matrix_rating):
 ${JSON.stringify(possibleSources, null, 2)}
 
 Task:
@@ -488,6 +492,8 @@ Task:
 - A condition can only reference a question earlier in the list, never itself or a later question.
 - For multiple_choice source questions: operator must be "equals" or "not_equals", and value must be one of that question's exact option strings.
 - For star_rating source questions: operator must be "lte" or "gte", and value must be an integer from 1 to 5.
+- For numeric_scale source questions: operator must be "lte" or "gte", and value must be an integer from 1 to 10.
+- For matrix_rating source questions: operator must be "lte" or "gte", value must be an integer from 0 to 5, and "subOption" may be "__avg__" (for the overall average) or one of that question's exact option strings.
 - Return ONLY questions that should have a suggested condition — omit questions that should stay unconditional.
 
 Return ONLY a raw JSON object matching this schema exactly. Do NOT wrap it in markdown formatting (like \`\`\`json) and do NOT include any explanation or extra text.
@@ -500,7 +506,8 @@ Schema:
       "condition": {
         "fieldId": "the id of the earlier source question",
         "operator": "equals" | "not_equals" | "lte" | "gte",
-        "value": "string or number matching the source question's type"
+        "value": "string or number matching the source question's type",
+        "subOption": "optional string ONLY for matrix_rating ('__avg__' or exact option string)"
       },
       "reasoning": "one short sentence explaining why in plain language"
     }
@@ -538,8 +545,14 @@ Schema:
         const sourceIdx = questions.findIndex((q: any) => q.id === condition.fieldId);
         if (sourceIdx < 0 || sourceIdx >= targetIdx) continue; // Source must appear earlier
 
-        if (sourceQ.type !== 'multiple_choice' && sourceQ.type !== 'star_rating' && sourceQ.type !== 'numeric_scale') continue;
+        if (
+          sourceQ.type !== 'multiple_choice' &&
+          sourceQ.type !== 'star_rating' &&
+          sourceQ.type !== 'numeric_scale' &&
+          sourceQ.type !== 'matrix_rating'
+        ) continue;
 
+        let cleanSubOption: string | undefined;
         if (sourceQ.type === 'multiple_choice') {
           if (condition.operator !== 'equals' && condition.operator !== 'not_equals') continue;
           if (!Array.isArray(sourceQ.options) || !sourceQ.options.includes(String(condition.value))) continue;
@@ -553,6 +566,20 @@ Schema:
           const numVal = Number(condition.value);
           if (!Number.isInteger(numVal) || numVal < 1 || numVal > 10) continue;
           condition.value = numVal;
+        } else if (sourceQ.type === 'matrix_rating') {
+          if (condition.operator !== 'lte' && condition.operator !== 'gte') continue;
+          const numVal = Number(condition.value);
+          if (!Number.isInteger(numVal) || numVal < 0 || numVal > 5) continue;
+          condition.value = numVal;
+          if (condition.subOption && condition.subOption !== '__avg__') {
+            if (!Array.isArray(sourceQ.options) || !sourceQ.options.includes(String(condition.subOption))) {
+              cleanSubOption = '__avg__';
+            } else {
+              cleanSubOption = String(condition.subOption);
+            }
+          } else {
+            cleanSubOption = '__avg__';
+          }
         }
 
         validSuggestions.push({
@@ -561,6 +588,7 @@ Schema:
             fieldId: condition.fieldId,
             operator: condition.operator,
             value: condition.value,
+            ...(cleanSubOption ? { subOption: cleanSubOption } : {}),
           },
           reasoning: typeof reasoning === 'string' ? reasoning : '',
         });
@@ -643,12 +671,12 @@ Required JSON Structure:
 }
 
 Constraints:
-1. "type" can only be "star_rating", "text", or "multiple_choice".
+1. "type" can only be "star_rating", "text", "multiple_choice", or "matrix_rating".
 2. "options" must be an empty array [] if type is "star_rating" or "text".
-3. "options" must contain 2 to 4 options if type is "multiple_choice".
+3. "options" must contain 2 to 4 options if type is "multiple_choice", or 2 to 5 sub-items to score out of 5 if type is "matrix_rating".
 4. "id" must be a short unique string (e.g. "q1", "q2", etc.).
 5. "weight" must be a number. Text questions MUST have a weight of 0.
-6. Non-text questions (star_rating, multiple_choice) MUST have positive weights that sum to EXACTLY 100 across all non-text questions.
+6. Non-text questions (star_rating, multiple_choice, matrix_rating) MUST have positive weights that sum to EXACTLY 100 across all non-text questions.
 7. "dependsOn" must be null for all fields.
 8. Questions must be practical, specific to the staff description, and appropriate for a service facility customer survey.`;
 
@@ -674,7 +702,7 @@ Constraints:
 
     const validatedFields: Array<{
       id: string;
-      type: 'star_rating' | 'multiple_choice' | 'text' | 'numeric_scale';
+      type: 'star_rating' | 'multiple_choice' | 'text' | 'numeric_scale' | 'matrix_rating';
       label: string;
       options: string[];
       weight: number;
@@ -685,7 +713,7 @@ Constraints:
       if (!item || typeof item !== 'object') {
         return NextResponse.json({ error: `AI response validation failed: field at index ${i} is invalid` }, { status: 500 });
       }
-      if (!item.type || !['star_rating', 'multiple_choice', 'text', 'numeric_scale'].includes(item.type)) {
+      if (!item.type || !['star_rating', 'multiple_choice', 'text', 'numeric_scale', 'matrix_rating'].includes(item.type)) {
         return NextResponse.json({ error: `AI response validation failed: field ${i} has invalid type` }, { status: 500 });
       }
       if (!item.label || typeof item.label !== 'string' || item.label.trim() === '') {
@@ -693,13 +721,13 @@ Constraints:
       }
 
       const isText = item.type === 'text';
-      const isMultipleChoice = item.type === 'multiple_choice';
+      const hasOptions = item.type === 'multiple_choice' || item.type === 'matrix_rating';
 
       validatedFields.push({
         id: typeof item.id === 'string' && item.id.trim() ? item.id.trim() : `q${i + 1}`,
         type: item.type,
         label: item.label.trim(),
-        options: isMultipleChoice && Array.isArray(item.options) ? item.options.map(String) : [],
+        options: hasOptions && Array.isArray(item.options) ? item.options.map(String) : [],
         weight: isText ? 0 : Number.isFinite(Number(item.weight)) ? Math.max(0, Math.round(Number(item.weight))) : 0,
         dependsOn: null,
       });

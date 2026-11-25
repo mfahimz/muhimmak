@@ -8,6 +8,7 @@ import {
   weeklySummaryEmail,
 } from '@/server/lib/email-templates';
 import { computeWeightedScore } from '@/server/services/sessions.service';
+import { computeMatrixAverageRaw } from '@/lib/forms/matrix';
 import { DEFAULT_LOW_SATISFACTION_THRESHOLD } from '@/lib/constants';
 
 async function resolveRecipientEmails(recipientProfileIds: string[]): Promise<string[]> {
@@ -195,11 +196,20 @@ export async function sendDailySummary(): Promise<void> {
       if (!fields) continue;
 
       const scoreable = fields.filter(
-        (f) => f.type === 'star_rating' || f.type === 'multiple_choice' || f.type === 'text' || f.type === 'numeric_scale'
+        (f) =>
+          f.type === 'star_rating' ||
+          f.type === 'multiple_choice' ||
+          f.type === 'text' ||
+          f.type === 'numeric_scale' ||
+          f.type === 'matrix_rating'
       );
       const totalWeightAssigned = scoreable.reduce((sum, f) => {
         const answer = answers[f.id];
-        return answer !== undefined && answer !== null ? sum + (f.weight || 0) : sum;
+        if (answer === undefined || answer === null) return sum;
+        if (f.type === 'matrix_rating' && !computeMatrixAverageRaw(f, answer, answers._matrixRated)) {
+          return sum;
+        }
+        return sum + (f.weight || 0);
       }, 0);
 
       if (totalWeightAssigned > 0) {
@@ -332,11 +342,20 @@ export async function sendWeeklySummary(): Promise<void> {
       if (!fields) continue;
 
       const scoreable = fields.filter(
-        (f) => f.type === 'star_rating' || f.type === 'multiple_choice' || f.type === 'text' || f.type === 'numeric_scale'
+        (f) =>
+          f.type === 'star_rating' ||
+          f.type === 'multiple_choice' ||
+          f.type === 'text' ||
+          f.type === 'numeric_scale' ||
+          f.type === 'matrix_rating'
       );
       const totalWeightAssigned = scoreable.reduce((sum, f) => {
         const answer = answers[f.id];
-        return answer !== undefined && answer !== null ? sum + (f.weight || 0) : sum;
+        if (answer === undefined || answer === null) return sum;
+        if (f.type === 'matrix_rating' && !computeMatrixAverageRaw(f, answer, answers._matrixRated)) {
+          return sum;
+        }
+        return sum + (f.weight || 0);
       }, 0);
 
       if (totalWeightAssigned > 0) {

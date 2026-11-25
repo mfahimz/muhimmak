@@ -10,6 +10,7 @@ import { encryptPlate, hashPlate } from '@/lib/utils/plate-number';
 import { DEFAULT_LOW_SATISFACTION_THRESHOLD } from '@/lib/constants';
 import { deepseek, DEEPSEEK_MODEL } from '@/server/lib/deepseek';
 import { getActiveAnnouncementForSession, type AnnouncementForRender } from '@/server/services/announcements.service';
+import { computeMatrixAverageRaw, formatMatrixAnswerSummary, sanitizeMatrixSubmission } from '@/lib/forms/matrix';
 
 // ---------------------------------------------------------------------------
 // Helper — weighted score calculation (used by completed + rescore + reports)
@@ -20,7 +21,12 @@ export function computeWeightedScore(
   textScores?: Record<string, number>
 ): { finalScore: number; aiTextScore: number | null } {
   const scoreable = fields.filter(
-    (f) => f.type === 'star_rating' || f.type === 'multiple_choice' || f.type === 'text' || f.type === 'numeric_scale'
+    (f) =>
+      f.type === 'star_rating' ||
+      f.type === 'multiple_choice' ||
+      f.type === 'text' ||
+      f.type === 'numeric_scale' ||
+      f.type === 'matrix_rating'
   );
 
   let weightedSum = 0;
@@ -28,7 +34,7 @@ export function computeWeightedScore(
   let textWeightedSum = 0;
   let textTotalWeight = 0;
 
-  scoreable.forEach((f) => {
+  for (const f of scoreable) {
     const answer = answers[f.id];
     if (answer !== undefined && answer !== null) {
       let questionNormalizedScore = 0;
@@ -45,6 +51,10 @@ export function computeWeightedScore(
         }
       } else if (f.type === 'numeric_scale') {
         questionNormalizedScore = ((Number(answer) - 1) / 9) * 100;
+      } else if (f.type === 'matrix_rating') {
+        const matrixScore = computeMatrixAverageRaw(f, answer, answers._matrixRated);
+        if (!matrixScore) continue;
+        questionNormalizedScore = matrixScore.normalizedScore;
       } else if (f.type === 'text') {
         questionNormalizedScore = textScores?.[f.id] ?? 50;
         textWeightedSum += (questionNormalizedScore * (f.weight || 0)) / 100;
@@ -53,7 +63,7 @@ export function computeWeightedScore(
       weightedSum += (questionNormalizedScore * (f.weight || 0)) / 100;
       totalWeightAssigned += f.weight || 0;
     }
-  });
+  }
 
   const finalScore =
     totalWeightAssigned > 0 ? (weightedSum * 100) / totalWeightAssigned : 0;
@@ -694,7 +704,8 @@ export async function updateSession(request: Request): Promise<NextResponse> {
       let showQr = false;
       let announcement: AnnouncementForRender | null = null;
 
-      if (answers) {
+      const sanitizedSubmittedAnswers: Record<string, unknown> | null = answers ? { ...answers } : null;
+      if (sanitizedSubmittedAnswers) {
         const { data: form } = await admin
           .from('forms')
           .select('fields')
@@ -702,9 +713,46 @@ export async function updateSession(request: Request): Promise<NextResponse> {
           .single();
 
         const fields = Array.isArray(form?.fields) ? (form.fields as any[]) : [];
-        const { finalScore, aiTextScore } = computeWeightedScore(fields, answers, textScores);
 
-        const answersWithScores = { ...answers, _textScores: textScores || {} };
+        // Sanitize matrix_rating submissions (0..5 whole numbers, blank options defaulted to 0)
+        const incomingMatrixRated =
+          sanitizedSubmittedAnswers._matrixRated &&
+          typeof sanitizedSubmittedAnswers._matrixRated === 'object' &&
+          !Array.isArray(sanitizedSubmittedAnswers._matrixRated)
+            ? (sanitizedSubmittedAnswers._matrixRated as Record<string, unknown>)
+            : {};
+        const cleanMatrixRated: Record<string, string[]> = {};
+        let hasMatrixRated = false;
+
+        for (const field of fields) {
+          if (
+            field?.type === 'matrix_rating' &&
+            sanitizedSubmittedAnswers[field.id] !== undefined &&
+            sanitizedSubmittedAnswers[field.id] !== null
+          ) {
+            const sanitized = sanitizeMatrixSubmission(
+              field,
+              sanitizedSubmittedAnswers[field.id],
+              incomingMatrixRated[field.id]
+            );
+            if (sanitized) {
+              sanitizedSubmittedAnswers[field.id] = sanitized.answer;
+              cleanMatrixRated[field.id] = sanitized.ratedKeys;
+              hasMatrixRated = true;
+            } else {
+              delete sanitizedSubmittedAnswers[field.id];
+            }
+          }
+        }
+        if (hasMatrixRated) {
+          sanitizedSubmittedAnswers._matrixRated = cleanMatrixRated;
+        } else {
+          delete sanitizedSubmittedAnswers._matrixRated;
+        }
+
+        const { finalScore, aiTextScore } = computeWeightedScore(fields, sanitizedSubmittedAnswers, textScores);
+
+        const answersWithScores = { ...sanitizedSubmittedAnswers, _textScores: textScores || {} };
 
         const { data: existingResponse } = await admin
           .from('responses')
@@ -820,9 +868,16 @@ export async function updateSession(request: Request): Promise<NextResponse> {
             .eq('id', '00000000-0000-0000-0000-000000000000')
             .single();
 
+          const summaryAnswers = sanitizedSubmittedAnswers || answers;
           const answerText = fieldsForAi
-            .filter((f: any) => answers[f.id] !== undefined && answers[f.id] !== null)
-            .map((f: any) => `Q: ${f.label}\nA: ${answers[f.id]}`)
+            .filter((f: any) => summaryAnswers[f.id] !== undefined && summaryAnswers[f.id] !== null)
+            .map((f: any) => {
+              const val =
+                f.type === 'matrix_rating'
+                  ? formatMatrixAnswerSummary(f, summaryAnswers[f.id], summaryAnswers._matrixRated, false)
+                  : summaryAnswers[f.id];
+              return `Q: ${f.label}\nA: ${val}`;
+            })
             .join('\n\n');
 
           if (answerText.trim() && process.env.DEEPSEEK_API_KEY) {

@@ -25,6 +25,7 @@ import {
   SkipForward,
   Trash2,
   Loader2,
+  LayoutGrid,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -41,6 +42,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { toArabicNumerals } from "@/lib/utils/arabic-numerals";
+import { computeMatrixAverageRaw, getMatrixEntries } from "@/lib/forms/matrix";
 import type { VisitScoreDetails } from "@/server/services/sessions.service";
 
 interface SessionDetailClientProps {
@@ -154,22 +156,21 @@ export default function SessionDetailClient({
     return fields.filter((f: any) => answers[f.id] === undefined || answers[f.id] === null);
   }, [fields, answers]);
 
-  const skippedByTypes = React.useMemo(() => {
+  const countSkippedByType = (list: any[]) => {
     const counts: Record<string, number> = {
       star_rating: 0,
       numeric_scale: 0,
       multiple_choice: 0,
+      matrix_rating: 0,
       text: 0,
     };
-    skippedFields.forEach((f) => {
-      if (counts[f.type] !== undefined) {
-        counts[f.type] += 1;
-      } else {
-        counts[f.type] = (counts[f.type] || 0) + 1;
-      }
+    list.forEach((f: any) => {
+      counts[f.type] = (counts[f.type] || 0) + 1;
     });
     return counts;
-  }, [skippedFields]);
+  };
+
+  const skippedByTypes = React.useMemo(() => countSkippedByType(skippedFields), [skippedFields]);
 
   const dropOffSkipped = React.useMemo(() => {
     if (!dropOffInfo) return [];
@@ -178,13 +179,7 @@ export default function SessionDetailClient({
     );
   }, [dropOffInfo]);
 
-  const dropOffSkippedByTypes = React.useMemo(() => {
-    const counts: Record<string, number> = { star_rating: 0, numeric_scale: 0, multiple_choice: 0, text: 0 };
-    dropOffSkipped.forEach((f: any) => {
-      counts[f.type] = (counts[f.type] || 0) + 1;
-    });
-    return counts;
-  }, [dropOffSkipped]);
+  const dropOffSkippedByTypes = React.useMemo(() => countSkippedByType(dropOffSkipped), [dropOffSkipped]);
 
   const pickUpSkipped = React.useMemo(() => {
     if (!pickUpInfo) return [];
@@ -193,13 +188,7 @@ export default function SessionDetailClient({
     );
   }, [pickUpInfo]);
 
-  const pickUpSkippedByTypes = React.useMemo(() => {
-    const counts: Record<string, number> = { star_rating: 0, numeric_scale: 0, multiple_choice: 0, text: 0 };
-    pickUpSkipped.forEach((f: any) => {
-      counts[f.type] = (counts[f.type] || 0) + 1;
-    });
-    return counts;
-  }, [pickUpSkipped]);
+  const pickUpSkippedByTypes = React.useMemo(() => countSkippedByType(pickUpSkipped), [pickUpSkipped]);
 
   const formatDateTime = (dateStr: string | null) => {
     if (!dateStr) return "—";
@@ -277,14 +266,21 @@ export default function SessionDetailClient({
       case "multiple_choice":
         return (
           <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 dark:bg-blue-950/40 px-2.5 py-0.5 text-[11px] font-medium text-blue-700 dark:text-blue-300 border border-blue-200/50">
-            Multiple Choice
+            {t("typeMultipleChoice")}
+          </span>
+        );
+      case "matrix_rating":
+        return (
+          <span className="inline-flex items-center gap-1 rounded-full bg-teal-50 dark:bg-teal-950/40 px-2.5 py-0.5 text-[11px] font-medium text-teal-700 dark:text-teal-300 border border-teal-200/50">
+            <LayoutGrid className="size-3" />
+            {t("typeMatrixRating")}
           </span>
         );
       case "text":
         return (
           <span className="inline-flex items-center gap-1 rounded-full bg-purple-50 dark:bg-purple-950/40 px-2.5 py-0.5 text-[11px] font-medium text-purple-700 dark:text-purple-300 border border-purple-200/50">
             <MessageSquare className="size-3" />
-            Text Feedback
+            {t("typeText")}
           </span>
         );
       default:
@@ -365,10 +361,48 @@ export default function SessionDetailClient({
                 </span>
               )}
 
+              {field.type === "matrix_rating" && (() => {
+                const entries = getMatrixEntries(field, answer, stageAnswers._matrixRated, locale === "ar");
+                const avg = computeMatrixAverageRaw(field, answer, stageAnswers._matrixRated);
+                return (
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {entries.map((entry, entryIdx) => (
+                        <div
+                          key={entryIdx}
+                          className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-muted/20 px-3 py-2 text-xs"
+                        >
+                          <span className="font-medium text-foreground">{entry.label}</span>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {!entry.wasRated && (
+                              <span className="rounded bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                                {t("matrixUnratedBadge")}
+                              </span>
+                            )}
+                            <span className="font-bold text-foreground tabular-nums">
+                              {toArabicNumerals(entry.score, locale)} / {toArabicNumerals(5, locale)}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    {avg && (
+                      <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums">
+                        {t("matrixAvgSummary", {
+                          avg: toArabicNumerals(Math.round(avg.averageRaw * 10) / 10, locale),
+                          pct: toArabicNumerals(Math.round(avg.normalizedScore), locale),
+                        })}
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
+
               {field.type !== "star_rating" &&
                 field.type !== "multiple_choice" &&
                 field.type !== "text" &&
-                field.type !== "numeric_scale" && (
+                field.type !== "numeric_scale" &&
+                field.type !== "matrix_rating" && (
                   <p className="text-sm font-medium text-foreground">
                     {String(answer)}
                   </p>
@@ -379,6 +413,58 @@ export default function SessionDetailClient({
       </div>
     );
   };
+
+  const renderSkippedGrid = (counts: Record<string, number>) => (
+    <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+      <div className="p-3.5 rounded-xl bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-900/40 flex flex-col gap-1">
+        <span className="text-[11px] font-medium text-amber-700 dark:text-amber-400 flex items-center gap-1">
+          <Star className="size-3 fill-amber-400 text-amber-400" />
+          {t("typeStarRating")}
+        </span>
+        <span className="text-xl font-extrabold text-foreground tabular-nums">
+          {toArabicNumerals(counts.star_rating || 0, locale)}
+        </span>
+      </div>
+
+      <div className="p-3.5 rounded-xl bg-orange-50/50 dark:bg-orange-950/20 border border-orange-200/50 dark:border-orange-900/40 flex flex-col gap-1">
+        <span className="text-[11px] font-medium text-orange-700 dark:text-orange-400">
+          {tNumeric("typeLabel")}
+        </span>
+        <span className="text-xl font-extrabold text-foreground tabular-nums">
+          {toArabicNumerals(counts.numeric_scale || 0, locale)}
+        </span>
+      </div>
+
+      <div className="p-3.5 rounded-xl bg-blue-50/50 dark:bg-blue-950/20 border border-blue-200/50 dark:border-blue-900/40 flex flex-col gap-1">
+        <span className="text-[11px] font-medium text-blue-700 dark:text-blue-400">
+          {t("typeMultipleChoice")}
+        </span>
+        <span className="text-xl font-extrabold text-foreground tabular-nums">
+          {toArabicNumerals(counts.multiple_choice || 0, locale)}
+        </span>
+      </div>
+
+      <div className="p-3.5 rounded-xl bg-teal-50/50 dark:bg-teal-950/20 border border-teal-200/50 dark:border-teal-900/40 flex flex-col gap-1">
+        <span className="text-[11px] font-medium text-teal-700 dark:text-teal-400 flex items-center gap-1">
+          <LayoutGrid className="size-3" />
+          {t("typeMatrixRating")}
+        </span>
+        <span className="text-xl font-extrabold text-foreground tabular-nums">
+          {toArabicNumerals(counts.matrix_rating || 0, locale)}
+        </span>
+      </div>
+
+      <div className="p-3.5 rounded-xl bg-purple-50/50 dark:bg-purple-950/20 border border-purple-200/50 dark:border-purple-900/40 flex flex-col gap-1">
+        <span className="text-[11px] font-medium text-purple-700 dark:text-purple-400 flex items-center gap-1">
+          <MessageSquare className="size-3" />
+          {t("typeText")}
+        </span>
+        <span className="text-xl font-extrabold text-foreground tabular-nums">
+          {toArabicNumerals(counts.text || 0, locale)}
+        </span>
+      </div>
+    </div>
+  );
 
   const displayScore = visitScoreDetails?.visitScore ?? computedScore;
   const isVisitJourneyMode = Boolean(isVisitJourney || session.visit_stage || visitScoreDetails?.isLinked);
@@ -667,47 +753,7 @@ export default function SessionDetailClient({
                   )}
                 </div>
 
-                {dropOffInfo.status === "completed" && dropOffInfo.fields.length > 0 && (
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    <div className="p-3.5 rounded-xl bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-900/40 flex flex-col gap-1">
-                      <span className="text-[11px] font-medium text-amber-700 dark:text-amber-400 flex items-center gap-1">
-                        <Star className="size-3 fill-amber-400 text-amber-400" />
-                        {t("typeStarRating")}
-                      </span>
-                      <span className="text-xl font-extrabold text-foreground tabular-nums">
-                        {toArabicNumerals(dropOffSkippedByTypes.star_rating || 0, locale)}
-                      </span>
-                    </div>
-
-                    <div className="p-3.5 rounded-xl bg-orange-50/50 dark:bg-orange-950/20 border border-orange-200/50 dark:border-orange-900/40 flex flex-col gap-1">
-                      <span className="text-[11px] font-medium text-orange-700 dark:text-orange-400">
-                        {tNumeric("typeLabel")}
-                      </span>
-                      <span className="text-xl font-extrabold text-foreground tabular-nums">
-                        {toArabicNumerals(dropOffSkippedByTypes.numeric_scale || 0, locale)}
-                      </span>
-                    </div>
-
-                    <div className="p-3.5 rounded-xl bg-blue-50/50 dark:bg-blue-950/20 border border-blue-200/50 dark:border-blue-900/40 flex flex-col gap-1">
-                      <span className="text-[11px] font-medium text-blue-700 dark:text-blue-400">
-                        {t("typeMultipleChoice")}
-                      </span>
-                      <span className="text-xl font-extrabold text-foreground tabular-nums">
-                        {toArabicNumerals(dropOffSkippedByTypes.multiple_choice || 0, locale)}
-                      </span>
-                    </div>
-
-                    <div className="p-3.5 rounded-xl bg-purple-50/50 dark:bg-purple-950/20 border border-purple-200/50 dark:border-purple-900/40 flex flex-col gap-1">
-                      <span className="text-[11px] font-medium text-purple-700 dark:text-purple-400 flex items-center gap-1">
-                        <MessageSquare className="size-3" />
-                        {t("typeText")}
-                      </span>
-                      <span className="text-xl font-extrabold text-foreground tabular-nums">
-                        {toArabicNumerals(dropOffSkippedByTypes.text || 0, locale)}
-                      </span>
-                    </div>
-                  </div>
-                )}
+                {dropOffInfo.status === "completed" && dropOffInfo.fields.length > 0 && renderSkippedGrid(dropOffSkippedByTypes)}
               </div>
 
               {/* Pick-up Stage Skipped Breakdown */}
@@ -731,47 +777,7 @@ export default function SessionDetailClient({
                   )}
                 </div>
 
-                {pickUpInfo.status === "completed" && pickUpInfo.fields.length > 0 && (
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    <div className="p-3.5 rounded-xl bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-900/40 flex flex-col gap-1">
-                      <span className="text-[11px] font-medium text-amber-700 dark:text-amber-400 flex items-center gap-1">
-                        <Star className="size-3 fill-amber-400 text-amber-400" />
-                        {t("typeStarRating")}
-                      </span>
-                      <span className="text-xl font-extrabold text-foreground tabular-nums">
-                        {toArabicNumerals(pickUpSkippedByTypes.star_rating || 0, locale)}
-                      </span>
-                    </div>
-
-                    <div className="p-3.5 rounded-xl bg-orange-50/50 dark:bg-orange-950/20 border border-orange-200/50 dark:border-orange-900/40 flex flex-col gap-1">
-                      <span className="text-[11px] font-medium text-orange-700 dark:text-orange-400">
-                        {tNumeric("typeLabel")}
-                      </span>
-                      <span className="text-xl font-extrabold text-foreground tabular-nums">
-                        {toArabicNumerals(pickUpSkippedByTypes.numeric_scale || 0, locale)}
-                      </span>
-                    </div>
-
-                    <div className="p-3.5 rounded-xl bg-blue-50/50 dark:bg-blue-950/20 border border-blue-200/50 dark:border-blue-900/40 flex flex-col gap-1">
-                      <span className="text-[11px] font-medium text-blue-700 dark:text-blue-400">
-                        {t("typeMultipleChoice")}
-                      </span>
-                      <span className="text-xl font-extrabold text-foreground tabular-nums">
-                        {toArabicNumerals(pickUpSkippedByTypes.multiple_choice || 0, locale)}
-                      </span>
-                    </div>
-
-                    <div className="p-3.5 rounded-xl bg-purple-50/50 dark:bg-purple-950/20 border border-purple-200/50 dark:border-purple-900/40 flex flex-col gap-1">
-                      <span className="text-[11px] font-medium text-purple-700 dark:text-purple-400 flex items-center gap-1">
-                        <MessageSquare className="size-3" />
-                        {t("typeText")}
-                      </span>
-                      <span className="text-xl font-extrabold text-foreground tabular-nums">
-                        {toArabicNumerals(pickUpSkippedByTypes.text || 0, locale)}
-                      </span>
-                    </div>
-                  </div>
-                )}
+                {pickUpInfo.status === "completed" && pickUpInfo.fields.length > 0 && renderSkippedGrid(pickUpSkippedByTypes)}
               </div>
             </CardContent>
           </Card>
@@ -792,45 +798,7 @@ export default function SessionDetailClient({
               </CardTitle>
             </CardHeader>
             <CardContent className="p-6 space-y-4">
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div className="p-3.5 rounded-xl bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-900/40 flex flex-col gap-1">
-                  <span className="text-[11px] font-medium text-amber-700 dark:text-amber-400 flex items-center gap-1">
-                    <Star className="size-3 fill-amber-400 text-amber-400" />
-                    {t("typeStarRating")}
-                  </span>
-                  <span className="text-xl font-extrabold text-foreground tabular-nums">
-                    {toArabicNumerals(skippedByTypes.star_rating || 0, locale)}
-                  </span>
-                </div>
-
-                <div className="p-3.5 rounded-xl bg-orange-50/50 dark:bg-orange-950/20 border border-orange-200/50 dark:border-orange-900/40 flex flex-col gap-1">
-                  <span className="text-[11px] font-medium text-orange-700 dark:text-orange-400">
-                    {tNumeric("typeLabel")}
-                  </span>
-                  <span className="text-xl font-extrabold text-foreground tabular-nums">
-                    {toArabicNumerals(skippedByTypes.numeric_scale || 0, locale)}
-                  </span>
-                </div>
-
-                <div className="p-3.5 rounded-xl bg-blue-50/50 dark:bg-blue-950/20 border border-blue-200/50 dark:border-blue-900/40 flex flex-col gap-1">
-                  <span className="text-[11px] font-medium text-blue-700 dark:text-blue-400">
-                    {t("typeMultipleChoice")}
-                  </span>
-                  <span className="text-xl font-extrabold text-foreground tabular-nums">
-                    {toArabicNumerals(skippedByTypes.multiple_choice || 0, locale)}
-                  </span>
-                </div>
-
-                <div className="p-3.5 rounded-xl bg-purple-50/50 dark:bg-purple-950/20 border border-purple-200/50 dark:border-purple-900/40 flex flex-col gap-1">
-                  <span className="text-[11px] font-medium text-purple-700 dark:text-purple-400 flex items-center gap-1">
-                    <MessageSquare className="size-3" />
-                    {t("typeText")}
-                  </span>
-                  <span className="text-xl font-extrabold text-foreground tabular-nums">
-                    {toArabicNumerals(skippedByTypes.text || 0, locale)}
-                  </span>
-                </div>
-              </div>
+              {renderSkippedGrid(skippedByTypes)}
             </CardContent>
           </Card>
         ) : null

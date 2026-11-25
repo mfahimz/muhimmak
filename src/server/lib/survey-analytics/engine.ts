@@ -40,6 +40,7 @@ import {
 } from '@/lib/analytics/types';
 import { buildFindings } from './findings';
 import { isAnswered, isUsableComment } from './text';
+import { computeMatrixAverageRaw, getMatrixRatedKeys, isMatrixAnswer, isValidMatrixScore } from '@/lib/forms/matrix';
 
 // ---------------------------------------------------------------------------
 // Input contract
@@ -107,7 +108,7 @@ export interface EngineInput {
 // ---------------------------------------------------------------------------
 
 const TZ = 'Asia/Dubai';
-const SCOREABLE = new Set(['star_rating', 'multiple_choice', 'numeric_scale', 'text']);
+const SCOREABLE = new Set(['star_rating', 'multiple_choice', 'numeric_scale', 'matrix_rating', 'text']);
 const MAX_COMMENTS_RETURNED = 300;
 const MAX_FOLLOW_UPS = 30;
 const MAX_TREND_POINTS = 120;
@@ -180,7 +181,7 @@ interface Normalized {
   raw: number | null;
 }
 
-function normalizeStructured(field: EngineField, answer: unknown): Normalized | null {
+function normalizeStructured(field: EngineField, answer: unknown, matrixRatedMap?: unknown): Normalized | null {
   if (field.type === 'star_rating') {
     const v = Number(answer);
     if (!Number.isFinite(v) || v < 1 || v > 5) return null;
@@ -198,11 +199,22 @@ function normalizeStructured(field: EngineField, answer: unknown): Normalized | 
     const s = idx >= 0 && Array.isArray(field.optionScores) ? field.optionScores[idx] : undefined;
     return { key, score: typeof s === 'number' && Number.isFinite(s) ? s : null, raw: null };
   }
+  if (field.type === 'matrix_rating') {
+    const res = computeMatrixAverageRaw(field, answer, matrixRatedMap);
+    if (!res) return null;
+    return { key: `${r1(res.averageRaw)}/5`, score: res.normalizedScore, raw: res.averageRaw };
+  }
   return null;
 }
 
 function hasWeightedAnswer(fields: EngineField[], answers: Record<string, unknown>): boolean {
-  return fields.some((f) => SCOREABLE.has(f.type) && (f.weight ?? 0) > 0 && isAnswered(answers[f.id]));
+  return fields.some((f) => {
+    if (!SCOREABLE.has(f.type) || (f.weight ?? 0) <= 0) return false;
+    if (f.type === 'matrix_rating') {
+      return computeMatrixAverageRaw(f, answers[f.id], answers._matrixRated) !== null;
+    }
+    return isAnswered(answers[f.id]);
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -237,6 +249,12 @@ interface OptAgg {
   labelAr: string | null;
 }
 
+interface MatrixSubAgg {
+  scores: number[];
+  rest: number[];
+  labelAr: string | null;
+}
+
 interface Agg {
   latest: EngineField;
   stage: StageKey;
@@ -248,6 +266,7 @@ interface Agg {
   buckets: Record<Bucket, number>;
   raw: number[];
   opts: Map<string, OptAgg>;
+  matrixSub: Map<string, MatrixSubAgg>;
   lang: Record<Lang, { scores: number[]; neg: number }>;
   negRest: number[];
   posRest: number[];
@@ -269,6 +288,7 @@ function emptyAgg(latest: EngineField, order: number): Agg {
     buckets: { positive: 0, neutral: 0, negative: 0 },
     raw: [],
     opts: new Map(),
+    matrixSub: new Map(),
     lang: { en: { scores: [], neg: 0 }, ar: { scores: [], neg: 0 } },
     negRest: [],
     posRest: [],
@@ -518,13 +538,67 @@ function buildCore(input: EngineInput): CoreResult {
         continue;
       }
 
-      const norm = normalizeStructured(field, value);
+      const norm = normalizeStructured(field, value, answers._matrixRated);
       if (!norm) {
         agg.answered--;
         continue;
       }
 
       const bucket = norm.score === null ? null : bucketOf(norm.score);
+
+      // Compute rest-of-survey score once if needed
+      let restScore: number | null = null;
+      if (norm.score !== null && bucket) {
+        const others = fields.filter((f) => f.id !== field.id);
+        if (hasWeightedAnswer(others, answers)) {
+          const rest = clampScore(weightedScore(others, answers, textScores).finalScore);
+          if (Number.isFinite(rest)) restScore = rest;
+        }
+      }
+
+      if (field.type === 'matrix_rating' && isMatrixAnswer(value)) {
+        const ratedKeys = getMatrixRatedKeys(field, value, answers._matrixRated);
+        let worstKey = norm.key;
+        let worstVal = Infinity;
+        for (const subKey of ratedKeys) {
+          const rawVal = value[subKey];
+          if (!isValidMatrixScore(rawVal)) continue;
+          const subScore = (rawVal / 5) * 100;
+          if (rawVal < worstVal) {
+            worstVal = rawVal;
+            worstKey = subKey;
+          }
+          let sub = agg.matrixSub.get(subKey);
+          if (!sub) {
+            const idx = Array.isArray(field.options) ? field.options.indexOf(subKey) : -1;
+            const labelAr = idx >= 0 ? (field.ar?.options?.[idx] ?? null) : null;
+            sub = { scores: [], rest: [], labelAr: labelAr ? labelAr.trim() : null };
+            agg.matrixSub.set(subKey, sub);
+          }
+          sub.scores.push(subScore);
+          if (restScore !== null) sub.rest.push(restScore);
+        }
+
+        const itemKey = bucket === 'negative' && worstVal <= 2 ? worstKey : norm.key;
+        row.items.push({ qid: field.id, key: itemKey, score: norm.score, bucket });
+        if (norm.raw !== null && field.type === agg.latest.type) agg.raw.push(norm.raw);
+
+        if (norm.score !== null && bucket) {
+          agg.scores.push(norm.score);
+          agg.buckets[bucket]++;
+          agg.lang[lang].scores.push(norm.score);
+          if (bucket === 'negative') {
+            agg.lang[lang].neg++;
+            row.negatives.push({ questionId: field.id, key: itemKey });
+          }
+          if (restScore !== null) {
+            if (bucket === 'negative') agg.negRest.push(restScore);
+            if (bucket === 'positive') agg.posRest.push(restScore);
+          }
+        }
+        continue;
+      }
+
       row.items.push({ qid: field.id, key: norm.key, score: norm.score, bucket });
 
       // Raw value distribution only when the answer was given on the question's current scale.
@@ -548,15 +622,10 @@ function buildCore(input: EngineInput): CoreResult {
           row.negatives.push({ questionId: field.id, key: norm.key });
         }
 
-        // Score of the rest of the survey, without this question's own weight.
-        const others = fields.filter((f) => f.id !== field.id);
-        if (hasWeightedAnswer(others, answers)) {
-          const rest = clampScore(weightedScore(others, answers, textScores).finalScore);
-          if (Number.isFinite(rest)) {
-            opt.rest.push(rest);
-            if (bucket === 'negative') agg.negRest.push(rest);
-            if (bucket === 'positive') agg.posRest.push(rest);
-          }
+        if (restScore !== null) {
+          opt.rest.push(restScore);
+          if (bucket === 'negative') agg.negRest.push(restScore);
+          if (bucket === 'positive') agg.posRest.push(restScore);
         }
       }
     }
@@ -576,7 +645,12 @@ function buildCore(input: EngineInput): CoreResult {
     .map(([id, a]): QuestionAnalysis => {
       const f = a.latest;
       const isText = f.type === 'text';
-      const scaleMax = f.type === 'star_rating' ? 5 : f.type === 'numeric_scale' ? 10 : null;
+      const scaleMax =
+        f.type === 'star_rating' || f.type === 'matrix_rating'
+          ? 5
+          : f.type === 'numeric_scale'
+          ? 10
+          : null;
 
       const options: OptionStat[] = [];
       const scoredTotal = a.scores.length;
@@ -608,6 +682,37 @@ function buildCore(input: EngineInput): CoreResult {
             score: o.score,
             bucket: o.score === null ? null : bucketOf(o.score),
             restAvg: o.rest.length >= MIN_GROUP ? r1(mean(o.rest)) : null,
+          });
+        }
+      } else if (f.type === 'matrix_rating') {
+        const seen = new Set<string>();
+        (f.options ?? []).forEach((key, idx) => {
+          seen.add(key);
+          const sub = a.matrixSub.get(key);
+          const avgScore = sub && sub.scores.length > 0 ? r1(mean(sub.scores)) : null;
+          options.push({
+            key,
+            labelEn: key,
+            labelAr: f.ar?.options?.[idx]?.trim() || null,
+            count: sub?.scores.length ?? 0,
+            pct: avgScore !== null ? Math.round(avgScore) : 0,
+            score: avgScore,
+            bucket: avgScore === null ? null : bucketOf(avgScore),
+            restAvg: sub && sub.rest.length >= MIN_GROUP ? r1(mean(sub.rest)) : null,
+          });
+        });
+        for (const [key, sub] of a.matrixSub) {
+          if (seen.has(key)) continue;
+          const avgScore = sub.scores.length > 0 ? r1(mean(sub.scores)) : null;
+          options.push({
+            key,
+            labelEn: key,
+            labelAr: sub.labelAr,
+            count: sub.scores.length,
+            pct: avgScore !== null ? Math.round(avgScore) : 0,
+            score: avgScore,
+            bucket: avgScore === null ? null : bucketOf(avgScore),
+            restAvg: sub.rest.length >= MIN_GROUP ? r1(mean(sub.rest)) : null,
           });
         }
       } else if (scaleMax) {

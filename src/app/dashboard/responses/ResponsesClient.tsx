@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import type { LiveResponsesData, EnrichedResponse } from "@/server/services/responses.service";
 import { toArabicNumerals } from "@/lib/utils/arabic-numerals";
+import { getMatrixEntries, isMatrixAnswer } from "@/lib/forms/matrix";
 import { DateRangeFilter, type PresetType } from "@/components/dashboard/DateRangeFilter";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -32,8 +33,8 @@ interface ResponsesClientProps {
   initialEndDate: string;
 }
 
-// star_rating answers run 1 to 5, every other averaged type (numeric_scale) 1 to 10.
-const ratingScaleMax = (type: string) => (type === "star_rating" ? 5 : 10);
+// star_rating and matrix_rating answers run out of 5, numeric_scale 1 to 10.
+const ratingScaleMax = (type: string) => (type === "star_rating" || type === "matrix_rating" ? 5 : 10);
 
 export function ResponsesClient({
   initialData,
@@ -141,7 +142,10 @@ export function ResponsesClient({
     return data.responses.filter((r) => {
       const plate = (r.plateNumber || "").toLowerCase();
       const mobile = (r.mobileNumber || "").toLowerCase();
-      const answersText = Object.values(r.answers).join(" ").toLowerCase();
+      const answersText = Object.values(r.answers)
+        .map((v) => (v && typeof v === "object" ? JSON.stringify(v) : String(v)))
+        .join(" ")
+        .toLowerCase();
       return plate.includes(term) || mobile.includes(term) || answersText.includes(term);
     });
   }, [data.responses, searchTerm]);
@@ -479,7 +483,7 @@ export function ResponsesClient({
                   {currentQuestion.type === "multiple_choice" && currentQuestionStats?.choiceDistribution && (
                     <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">
                       <span className="text-xs font-semibold text-slate-500 block mb-2">
-                        Response Distribution:
+                        {t("responseDistribution")}
                       </span>
                       <div className="flex flex-wrap gap-2">
                         {currentQuestionStats.choiceDistribution.map((opt, i) => (
@@ -490,6 +494,32 @@ export function ResponsesClient({
                             <span className="font-medium text-slate-800 dark:text-slate-200">{opt.label}</span>
                             <Badge className="bg-indigo-600 text-white text-[10px] px-1.5 py-0 font-bold">
                               {opt.count} ({opt.percentage}%)
+                            </Badge>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Matrix-rating sub-option breakdown pills */}
+                  {currentQuestion.type === "matrix_rating" && currentQuestionStats?.matrixOptionStats && (
+                    <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">
+                      <span className="text-xs font-semibold text-slate-500 block mb-2">
+                        {t("matrixSubOptionAverages")}
+                      </span>
+                      <div className="flex flex-wrap gap-2">
+                        {currentQuestionStats.matrixOptionStats.map((sub, i) => (
+                          <div
+                            key={i}
+                            className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs"
+                          >
+                            <span className="font-medium text-slate-800 dark:text-slate-200">
+                              {locale === "ar" && sub.labelAr ? sub.labelAr : sub.labelEn}
+                            </span>
+                            <Badge className="bg-teal-600 text-white text-[10px] px-1.5 py-0 font-bold tabular-nums">
+                              {sub.averageRating !== null
+                                ? `${toArabicNumerals(sub.averageRating, locale)} / ${toArabicNumerals(5, locale)}`
+                                : "—"}
                             </Badge>
                           </div>
                         ))}
@@ -553,7 +583,36 @@ export function ResponsesClient({
                                 {response.language}
                               </td>
                               <td className="py-2.5 px-3 text-slate-900 dark:text-slate-100 font-medium max-w-md">
-                                {String(answer)}
+                                {currentQuestion.type === "matrix_rating" && isMatrixAnswer(answer) ? (
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {getMatrixEntries(
+                                      {
+                                        id: currentQuestion.id,
+                                        options: currentQuestion.options,
+                                        ar: { options: currentQuestion.optionsAr },
+                                      },
+                                      answer,
+                                      response.answers._matrixRated,
+                                      locale === "ar"
+                                    ).map((entry, entryIdx) => (
+                                      <span
+                                        key={entryIdx}
+                                        className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] ${
+                                          entry.wasRated
+                                            ? "border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-200"
+                                            : "border-dashed border-slate-200 dark:border-slate-800 text-slate-400"
+                                        }`}
+                                      >
+                                        <span>{entry.label}:</span>
+                                        <span className="font-bold tabular-nums">
+                                          {toArabicNumerals(entry.score, locale)}/{toArabicNumerals(5, locale)}
+                                        </span>
+                                      </span>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  String(answer)
+                                )}
                               </td>
                               <td className="py-2.5 px-3 text-center">
                                 {score !== undefined ? (
@@ -845,6 +904,20 @@ export function ResponsesClient({
                             </span>
                           ))}
                         </div>
+                      ) : qs.type === "matrix_rating" && qs.matrixOptionStats && qs.matrixOptionStats.length > 0 ? (
+                        <div className="flex flex-wrap gap-1">
+                          {qs.matrixOptionStats.slice(0, 3).map((m, i) => (
+                            <span
+                              key={i}
+                              className="inline-block bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-[10px] tabular-nums"
+                            >
+                              {locale === "ar" && m.labelAr ? m.labelAr : m.labelEn}:{" "}
+                              {m.averageRating !== null
+                                ? `${toArabicNumerals(m.averageRating, locale)}/${toArabicNumerals(5, locale)}`
+                                : "—"}
+                            </span>
+                          ))}
+                        </div>
                       ) : qs.type === "text" ? (
                         <span className="text-indigo-600 dark:text-indigo-400 font-medium">
                           {qs.textCount} text comments
@@ -913,9 +986,30 @@ export function ResponsesClient({
                         className="p-3 rounded-lg border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 text-xs"
                       >
                         <div className="text-slate-500 font-semibold mb-1">{q.labelEn}</div>
-                        <div className="text-slate-900 dark:text-white font-medium text-sm">
-                          {String(inspectSession.answers[q.id])}
-                        </div>
+                        {q.type === "matrix_rating" && isMatrixAnswer(inspectSession.answers[q.id]) ? (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 mt-1.5">
+                            {getMatrixEntries(
+                              { id: q.id, options: q.options, ar: { options: q.optionsAr } },
+                              inspectSession.answers[q.id],
+                              inspectSession.answers._matrixRated,
+                              locale === "ar"
+                            ).map((entry, entryIdx) => (
+                              <div
+                                key={entryIdx}
+                                className="flex items-center justify-between gap-2 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2.5 py-1 text-xs"
+                              >
+                                <span className="text-slate-700 dark:text-slate-300">{entry.label}</span>
+                                <span className="font-bold text-slate-900 dark:text-white tabular-nums">
+                                  {toArabicNumerals(entry.score, locale)}/{toArabicNumerals(5, locale)}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="text-slate-900 dark:text-white font-medium text-sm">
+                            {String(inspectSession.answers[q.id])}
+                          </div>
+                        )}
                       </div>
                     ))}
                 </div>

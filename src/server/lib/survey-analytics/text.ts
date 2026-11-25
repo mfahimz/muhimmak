@@ -24,6 +24,7 @@ export function isUsableComment(raw: string): boolean {
 export function isAnswered(value: unknown): boolean {
   if (value === undefined || value === null) return false;
   if (typeof value === 'string') return value.trim() !== '';
+  if (typeof value === 'object' && !Array.isArray(value)) return Object.keys(value).length > 0;
   return true;
 }
 

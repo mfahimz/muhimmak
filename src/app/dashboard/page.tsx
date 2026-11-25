@@ -15,6 +15,7 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 import { computeReceptionistImpact, computeWeightedScore } from "@/server/services/sessions.service"
+import { computeMatrixAverageRaw } from "@/lib/forms/matrix"
 import ReceptionistImpactCard from "@/components/dashboard/ReceptionistImpactCard"
 import ReceptionistImpactSelector from "@/components/dashboard/ReceptionistImpactSelector"
 
@@ -167,11 +168,16 @@ export default async function Page() {
               f.type === "star_rating" ||
               f.type === "multiple_choice" ||
               f.type === "text" ||
-              f.type === "numeric_scale"
+              f.type === "numeric_scale" ||
+              f.type === "matrix_rating"
           )
           const totalWeightAssigned = scoreable.reduce((sum: number, f: any) => {
             const answer = answers[f.id]
-            return answer !== undefined && answer !== null ? sum + (f.weight || 0) : sum
+            if (answer === undefined || answer === null) return sum
+            if (f.type === "matrix_rating" && !computeMatrixAverageRaw(f, answer, answers._matrixRated)) {
+              return sum
+            }
+            return sum + (f.weight || 0)
           }, 0)
 
           if (totalWeightAssigned > 0) {

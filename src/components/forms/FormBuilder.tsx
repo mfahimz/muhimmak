@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { ArrowUp, ArrowDown, Trash2, Plus, X, Star, FileText, List, Sparkles, GitBranch, ChevronDown, ChevronUp, LogIn, LogOut, AlertTriangle } from "lucide-react"
+import { ArrowUp, ArrowDown, Trash2, Plus, X, Star, FileText, List, Sparkles, GitBranch, ChevronDown, ChevronUp, LogIn, LogOut, AlertTriangle, LayoutGrid } from "lucide-react"
 import { useTranslations, useLocale } from "next-intl"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -12,7 +12,7 @@ import { Switch } from "@/components/ui/switch"
 import { toast } from "sonner"
 import { toArabicNumerals } from "@/lib/utils/arabic-numerals"
 
-import { FieldCondition, normalizeDependsOn } from "@/lib/forms/condition"
+import { FieldCondition, MATRIX_AVG_TARGET, normalizeDependsOn } from "@/lib/forms/condition"
 import type { QuestionDomain } from "@/lib/forms/domain"
 
 export type { FieldCondition }
@@ -20,7 +20,7 @@ export type { FieldCondition }
 export interface BuilderField {
   id: string
   order: number
-  type: "star_rating" | "text" | "multiple_choice" | "numeric_scale"
+  type: "star_rating" | "text" | "multiple_choice" | "numeric_scale" | "matrix_rating"
   label: string
   required: boolean
   options: string[]
@@ -195,8 +195,15 @@ export function FormBuilder({
   }, [isVisitJourney, stageTab, fields, dropOffFields, pickUpFields])
 
   // Compute weights total
+  const isScoreableType = (type: BuilderField["type"]) =>
+    type === "star_rating" ||
+    type === "multiple_choice" ||
+    type === "text" ||
+    type === "numeric_scale" ||
+    type === "matrix_rating"
+
   const scoreableFields = React.useMemo(() => {
-    return fields.filter(f => f.type === "star_rating" || f.type === "multiple_choice" || f.type === "text" || f.type === "numeric_scale")
+    return fields.filter(f => isScoreableType(f.type))
   }, [fields])
 
   const totalWeight = React.useMemo(() => {
@@ -204,7 +211,7 @@ export function FormBuilder({
   }, [scoreableFields])
 
   const dropOffScoreable = React.useMemo(() => {
-    return dropOffFields.filter(f => f.type === "star_rating" || f.type === "multiple_choice" || f.type === "text" || f.type === "numeric_scale")
+    return dropOffFields.filter(f => isScoreableType(f.type))
   }, [dropOffFields])
 
   const dropOffTotalWeight = React.useMemo(() => {
@@ -212,7 +219,7 @@ export function FormBuilder({
   }, [dropOffScoreable])
 
   const pickUpScoreable = React.useMemo(() => {
-    return pickUpFields.filter(f => f.type === "star_rating" || f.type === "multiple_choice" || f.type === "text" || f.type === "numeric_scale")
+    return pickUpFields.filter(f => isScoreableType(f.type))
   }, [pickUpFields])
 
   const pickUpTotalWeight = React.useMemo(() => {
@@ -232,8 +239,13 @@ export function FormBuilder({
   const isSuggestReady = React.useMemo(() => {
     const allLabelsFilled = activeScoreableFields.every(f => f.label.trim() !== "")
     const allOptionsFilled = activeScoreableFields.every(f => {
-      if (f.type !== "multiple_choice") return true
-      return f.options.length >= 2 && f.options.every(opt => opt.trim() !== "")
+      if (f.type === "multiple_choice") {
+        return f.options.length >= 2 && f.options.every(opt => opt.trim() !== "")
+      }
+      if (f.type === "matrix_rating") {
+        return f.options.length >= 1 && f.options.every(opt => opt.trim() !== "")
+      }
+      return true
     })
     return allLabelsFilled && allOptionsFilled
   }, [activeScoreableFields])
@@ -289,36 +301,60 @@ export function FormBuilder({
     if ('label' in updates) {
       setStaleFieldIds(prev => new Set(prev).add(id))
     }
-    setFields(
-      fields.map((f) => {
+    setFields(prev => {
+      const oldField = prev.find(f => f.id === id)
+      const typeChanged = Boolean(updates.type && oldField && updates.type !== oldField.type)
+
+      return prev.map((f) => {
         if (f.id === id) {
           const next = { ...f, ...updates }
           if (updates.type) {
-            if (updates.type === "text") {
-              next.weight = f.weight ?? 0
-              delete next.optionScores
-              next.options = []
-            } else if (updates.type === "star_rating") {
-              next.weight = f.weight ?? 0
-              delete next.optionScores
-              next.options = []
-            } else if (updates.type === "numeric_scale") {
+            if (updates.type === "text" || updates.type === "star_rating" || updates.type === "numeric_scale") {
               next.weight = f.weight ?? 0
               delete next.optionScores
               next.options = []
             } else if (updates.type === "multiple_choice") {
               next.weight = f.weight ?? 0
               if (f.type !== "multiple_choice") {
-                next.options = [`${tAI("optionDefault")} 1`]
-                next.optionScores = [0]
+                next.options = f.options.length > 0 ? f.options : [`${tAI("optionDefault")} 1`]
+                next.optionScores = new Array(next.options.length).fill(0)
+              }
+            } else if (updates.type === "matrix_rating") {
+              next.weight = f.weight ?? 0
+              delete next.optionScores
+              if (f.type !== "matrix_rating") {
+                next.options = f.options.length > 0 ? f.options : [`${tAI("optionDefault")} 1`, `${tAI("optionDefault")} 2`]
               }
             }
           }
           return next
         }
+
+        if (typeChanged && f.dependsOn) {
+          const conditions = normalizeDependsOn(f.dependsOn)
+          if (updates.type === "text") {
+            const remaining = conditions.filter(c => c.fieldId !== id)
+            return { ...f, dependsOn: remaining.length > 0 ? remaining : null }
+          }
+          const updatedConds = conditions.map(c => {
+            if (c.fieldId !== id) return c
+            if (updates.type === "matrix_rating") {
+              return { fieldId: id, operator: "lte" as const, value: 3, subOption: MATRIX_AVG_TARGET }
+            }
+            if (updates.type === "star_rating") {
+              return { fieldId: id, operator: "lte" as const, value: 3 }
+            }
+            if (updates.type === "numeric_scale") {
+              return { fieldId: id, operator: "lte" as const, value: 5 }
+            }
+            return { fieldId: id, operator: "equals" as const, value: oldField?.options?.[0] ?? "" }
+          })
+          return { ...f, dependsOn: updatedConds }
+        }
+
         return f
       })
-    )
+    })
   }
 
   // Move a question field up or down within current list
@@ -340,16 +376,23 @@ export function FormBuilder({
     })
   }
 
-  // Add option to a multiple choice field
+  // Add option to a multiple choice or matrix rating field
   const handleAddOption = (fieldId: string) => {
     setFields(
       fields.map((f) => {
         if (f.id === fieldId) {
-          const scores = f.optionScores ? [...f.optionScores] : []
+          const nextOptions = [...f.options, `${tAI("optionDefault")} ${f.options.length + 1}`]
+          if (f.type === "multiple_choice") {
+            const scores = f.optionScores ? [...f.optionScores] : new Array(f.options.length).fill(0)
+            return {
+              ...f,
+              options: nextOptions,
+              optionScores: [...scores, 0]
+            }
+          }
           return {
             ...f,
-            options: [...f.options, `${tAI("optionDefault")} ${f.options.length + 1}`],
-            optionScores: [...scores, 0]
+            options: nextOptions
           }
         }
         return f
@@ -357,22 +400,55 @@ export function FormBuilder({
     )
   }
 
-  // Remove option from a multiple choice field
+  // Remove option from a multiple choice or matrix rating field
   const handleRemoveOption = (fieldId: string, optionIndex: number) => {
-    setFields(
-      fields.map((f) => {
+    setFields(prev => {
+      const target = prev.find(f => f.id === fieldId)
+      const removedVal = target?.options[optionIndex]
+      const updatedTargetOptions = target ? target.options.filter((_, idx) => idx !== optionIndex) : []
+      const stillExists = removedVal !== undefined && updatedTargetOptions.includes(removedVal)
+
+      return prev.map((f) => {
         if (f.id === fieldId) {
           const updatedOptions = f.options.filter((_, idx) => idx !== optionIndex)
-          const updatedScores = f.optionScores ? f.optionScores.filter((_, idx) => idx !== optionIndex) : []
+          const updatedArOptions = f.ar?.options ? f.ar.options.filter((_, idx) => idx !== optionIndex) : undefined
+          const nextAr = f.ar ? { ...f.ar, options: updatedArOptions ?? f.ar.options } : f.ar
+          if (f.type === "multiple_choice") {
+            const updatedScores = f.optionScores ? f.optionScores.filter((_, idx) => idx !== optionIndex) : []
+            return {
+              ...f,
+              options: updatedOptions,
+              optionScores: updatedScores,
+              ar: nextAr,
+            }
+          }
           return {
             ...f,
             options: updatedOptions,
-            optionScores: updatedScores
+            ar: nextAr,
           }
         }
+
+        if (!stillExists && removedVal !== undefined && f.dependsOn) {
+          const conds = normalizeDependsOn(f.dependsOn)
+          let changed = false
+          const nextConds = conds.map(c => {
+            if (c.fieldId === fieldId && target?.type === "matrix_rating" && c.subOption === removedVal) {
+              changed = true
+              return { ...c, subOption: MATRIX_AVG_TARGET }
+            }
+            if (c.fieldId === fieldId && target?.type === "multiple_choice" && c.value === removedVal) {
+              changed = true
+              return { ...c, value: updatedTargetOptions[0] ?? "" }
+            }
+            return c
+          })
+          return changed ? { ...f, dependsOn: nextConds } : f
+        }
+
         return f
       })
-    )
+    })
   }
 
   function handleReorderOption(fieldId: string, fromIndex: number, direction: 'up' | 'down') {
@@ -411,7 +487,7 @@ export function FormBuilder({
     const list = isVisitJourney ? currentStageFields : fields
     return list
       .slice(0, currentFieldIndex)
-      .filter(f => f.type === 'multiple_choice' || f.type === 'star_rating' || f.type === 'numeric_scale')
+      .filter(f => f.type === 'multiple_choice' || f.type === 'star_rating' || f.type === 'numeric_scale' || f.type === 'matrix_rating')
   }
 
   function handleUpdateConditions(
@@ -423,10 +499,17 @@ export function FormBuilder({
     ))
   }
 
-  // Update option value
+  // Update option value (and keep downstream branching references in sync)
   const handleUpdateOption = (fieldId: string, optionIndex: number, val: string) => {
-    setFields(
-      fields.map((f) => {
+    setFields(prev => {
+      const target = prev.find(f => f.id === fieldId)
+      const oldVal = target?.options[optionIndex]
+      const isUniqueOld =
+        oldVal !== undefined &&
+        target !== undefined &&
+        target.options.filter(o => o === oldVal).length === 1
+
+      return prev.map((f) => {
         if (f.id === fieldId) {
           const updatedOptions = [...f.options]
           updatedOptions[optionIndex] = val
@@ -435,9 +518,27 @@ export function FormBuilder({
             options: updatedOptions,
           }
         }
+
+        if (isUniqueOld && oldVal !== undefined && f.dependsOn) {
+          const conds = normalizeDependsOn(f.dependsOn)
+          let changed = false
+          const nextConds = conds.map(c => {
+            if (c.fieldId === fieldId && target?.type === "matrix_rating" && c.subOption === oldVal) {
+              changed = true
+              return { ...c, subOption: val }
+            }
+            if (c.fieldId === fieldId && target?.type === "multiple_choice" && c.value === oldVal) {
+              changed = true
+              return { ...c, value: val }
+            }
+            return c
+          })
+          return changed ? { ...f, dependsOn: nextConds } : f
+        }
+
         return f
       })
-    )
+    })
     setStaleFieldIds(prev => new Set(prev).add(fieldId))
   }
 
@@ -777,6 +878,26 @@ export function FormBuilder({
     e.preventDefault()
     if (!name.trim()) return
 
+    for (const f of fields) {
+      if (!f.label.trim()) {
+        toast.error(tAI("validationEmptyQuestionLabel"))
+        return
+      }
+      if (f.type === "multiple_choice" || f.type === "matrix_rating") {
+        if (f.options.length === 0 || f.options.some(opt => opt.trim() === "")) {
+          toast.error(tAI("validationEmptyOption"))
+          return
+        }
+        if (f.type === "matrix_rating") {
+          const normalizedOpts = f.options.map(opt => opt.trim())
+          if (new Set(normalizedOpts).size !== normalizedOpts.length) {
+            toast.error(tAI("validationDuplicateMatrixOption"))
+            return
+          }
+        }
+      }
+    }
+
     if (isVisitJourney) {
       // 1. Guard: must have at least 1 scoreable question in EACH tab
       if (dropOffScoreable.length === 0 || pickUpScoreable.length === 0) {
@@ -802,7 +923,24 @@ export function FormBuilder({
       }
     }
 
-    onSave(name.trim(), description.trim(), fields, nameAr, descriptionAr, isVisitJourney)
+    const cleanedFields = fields.map((f) => {
+      const next = {
+        ...f,
+        label: f.label.trim(),
+        options: f.options.map(opt => opt.trim()),
+      }
+      if (next.dependsOn) {
+        const conds = normalizeDependsOn(next.dependsOn).map(c => ({
+          ...c,
+          ...(c.subOption ? { subOption: c.subOption.trim() } : {}),
+          ...(typeof c.value === "string" ? { value: c.value.trim() } : {}),
+        }))
+        next.dependsOn = conds
+      }
+      return next
+    })
+
+    onSave(name.trim(), description.trim(), cleanedFields, nameAr.trim(), descriptionAr.trim(), isVisitJourney)
   }
 
   return (
@@ -1192,7 +1330,19 @@ export function FormBuilder({
                           onValueChange={(val: any) => handleUpdateField(field.id, { type: val })}
                         >
                           <SelectTrigger className="h-9 border-slate-200 dark:border-slate-800 text-sm focus-visible:ring-indigo-500">
-                            <SelectValue />
+                            <SelectValue>
+                              {(val: string | null) =>
+                                val
+                                  ? ({
+                                      text: t("textAnswer"),
+                                      star_rating: t("starRating"),
+                                      numeric_scale: t("numericScale"),
+                                      multiple_choice: t("multipleChoice"),
+                                      matrix_rating: t("matrixRating"),
+                                    }[val] ?? val)
+                                  : ""
+                              }
+                            </SelectValue>
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="text">
@@ -1219,13 +1369,19 @@ export function FormBuilder({
                                 {t("multipleChoice")}
                               </span>
                             </SelectItem>
+                            <SelectItem value="matrix_rating">
+                              <span className="flex items-center gap-1.5">
+                                <LayoutGrid className="size-3.5 text-slate-400" />
+                                {t("matrixRating")}
+                              </span>
+                            </SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
                     </div>
 
                     {/* Weight scoring field for scoreable questions */}
-                    {(field.type === "star_rating" || field.type === "multiple_choice" || field.type === "text" || field.type === "numeric_scale") && (
+                    {isScoreableType(field.type) && (
                       <div className="space-y-1">
                         <div className="flex items-center gap-2 max-w-[200px] bg-slate-50/50 dark:bg-slate-900/20 px-3 py-1.5 rounded-lg border border-slate-100 dark:border-slate-800/80">
                           <Label htmlFor={`weight-${field.id}`} className="text-xs font-semibold text-slate-500 dark:text-slate-400">
@@ -1252,12 +1408,19 @@ export function FormBuilder({
                       </div>
                     )}
 
-                    {/* Options list for Multiple Choice */}
-                    {field.type === "multiple_choice" && (
+                    {/* Options list for Multiple Choice and Matrix Rating */}
+                    {(field.type === "multiple_choice" || field.type === "matrix_rating") && (
                       <div className="bg-slate-50/50 dark:bg-slate-900/10 p-3 rounded-lg border border-slate-100 dark:border-slate-800/80 space-y-2.5">
-                        <Label className="text-xs font-bold text-slate-600 dark:text-slate-400 block">
-                          {t("options")}
-                        </Label>
+                        <div className="flex items-center justify-between gap-2">
+                          <Label className="text-xs font-bold text-slate-600 dark:text-slate-400 block">
+                            {field.type === "matrix_rating" ? t("matrixSubOptions") : t("options")}
+                          </Label>
+                          {field.type === "matrix_rating" && (
+                            <span className="text-[11px] font-medium text-indigo-600 dark:text-indigo-400">
+                              {tAI("matrixSubOptionsHint")}
+                            </span>
+                          )}
+                        </div>
                         
                         <div className="space-y-2">
                           {field.options.map((option, optIdx) => (
@@ -1310,17 +1473,23 @@ export function FormBuilder({
                                   dir={activeTab === 'ar' ? "rtl" : "ltr"}
                                 />
                               </div>
-                              <div className="flex items-center gap-1.5 shrink-0">
-                                <span className="text-[10px] text-slate-400 dark:text-slate-500">{tAI("scoreLabel")}</span>
-                                <Input
-                                  type="number"
-                                  min={0}
-                                  max={100}
-                                  value={field.optionScores?.[optIdx] ?? 0}
-                                  onChange={(e) => handleUpdateOptionScore(field.id, optIdx, parseInt(e.target.value) || 0)}
-                                  className="w-14 h-8 border-slate-200 dark:border-slate-800 text-xs text-center p-1"
-                                />
-                              </div>
+                              {field.type === "multiple_choice" ? (
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <span className="text-[10px] text-slate-400 dark:text-slate-500">{tAI("scoreLabel")}</span>
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    max={100}
+                                    value={field.optionScores?.[optIdx] ?? 0}
+                                    onChange={(e) => handleUpdateOptionScore(field.id, optIdx, parseInt(e.target.value) || 0)}
+                                    className="w-14 h-8 border-slate-200 dark:border-slate-800 text-xs text-center p-1"
+                                  />
+                                </div>
+                              ) : (
+                                <span className="shrink-0 rounded-md bg-slate-100 dark:bg-slate-800 px-2 py-1 text-[10px] font-semibold text-slate-500 dark:text-slate-400">
+                                  {tAI("matrixZeroToFiveBadge")}
+                                </span>
+                              )}
                               <Button
                                 type="button"
                                 variant="ghost"
@@ -1343,7 +1512,7 @@ export function FormBuilder({
                           className="h-7 text-xs text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50/50 px-2 mt-1"
                         >
                           <Plus className="size-3 mr-1" />
-                          {t("addOption")}
+                          {field.type === "matrix_rating" ? t("addSubOption") : t("addOption")}
                         </Button>
                       </div>
                     )}
@@ -1393,7 +1562,12 @@ export function FormBuilder({
                                           : cond.operator === 'not_equals' ? '≠'
                                           : cond.operator === 'lte' ? '≤'
                                           : '≥'
-                                        return `${tAI("conditionEditor.shownIf")} Q${src.order} ${opLabel} ${cond.value}`
+                                        const subTargetLabel = src.type === 'matrix_rating'
+                                          ? (cond.subOption && cond.subOption !== MATRIX_AVG_TARGET
+                                              ? ` [${cond.subOption}]`
+                                              : ` (${tAI("conditionEditor.matrixAvgShort")})`)
+                                          : ''
+                                        return `${tAI("conditionEditor.shownIf")} Q${src.order}${subTargetLabel} ${opLabel} ${cond.value}`
                                       })()
                                     : `${tAI("conditionEditor.shownIf")} ${tAI("conditionEditor.multipleConditionsSet", { count: conditions.length })}`
                                   )
@@ -1456,14 +1630,21 @@ export function FormBuilder({
                                               const updated = [...conditions]
                                               updated[condIdx] = {
                                                 fieldId: String(val),
-                                                operator: (selectedSrc.type === 'star_rating' || selectedSrc.type === 'numeric_scale') ? ('lte' as const) : ('equals' as const),
-                                                value: selectedSrc.type === 'star_rating' ? 3 : selectedSrc.type === 'numeric_scale' ? 5 : (selectedSrc.options[0] ?? ''),
+                                                operator: (selectedSrc.type === 'star_rating' || selectedSrc.type === 'numeric_scale' || selectedSrc.type === 'matrix_rating') ? ('lte' as const) : ('equals' as const),
+                                                value: selectedSrc.type === 'star_rating' ? 3 : selectedSrc.type === 'numeric_scale' ? 5 : selectedSrc.type === 'matrix_rating' ? 3 : (selectedSrc.options[0] ?? ''),
+                                                ...(selectedSrc.type === 'matrix_rating' ? { subOption: MATRIX_AVG_TARGET } : {}),
                                               }
                                               handleUpdateConditions(field.id, updated)
                                             }}
                                           >
                                             <SelectTrigger className="h-8 text-xs border-slate-200 dark:border-slate-700">
-                                              <SelectValue placeholder={tAI("conditionEditor.pickQuestion")} />
+                                              <SelectValue placeholder={tAI("conditionEditor.pickQuestion")}>
+                                                {(val: string | null) => {
+                                                  if (!val) return tAI("conditionEditor.pickQuestion")
+                                                  const found = sources.find(s => s.id === val)
+                                                  return found ? `Q${found.order}: ${found.label || '(untitled)'}` : val
+                                                }}
+                                              </SelectValue>
                                             </SelectTrigger>
                                             <SelectContent>
                                               {sources.map(s => (
@@ -1490,77 +1671,131 @@ export function FormBuilder({
                                         </Button>
                                       </div>
 
-                                      {/* Operator + Value */}
+                                      {/* Sub-target + Operator + Value */}
                                       {cond.fieldId && src && (
-                                        <div className="flex items-center gap-2 pt-1">
-                                          <Select
-                                            value={cond.operator}
-                                            onValueChange={(val: any) => {
-                                              if (!val) return
-                                              const updated = [...conditions]
-                                              updated[condIdx] = { ...cond, operator: val }
-                                              handleUpdateConditions(field.id, updated)
-                                            }}
-                                          >
-                                            <SelectTrigger className="h-8 text-xs w-28 border-slate-200 dark:border-slate-700">
-                                              <SelectValue />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                              {src.type === 'multiple_choice' ? (
-                                                <>
-                                                  <SelectItem value="equals">{tAI("conditionEditor.operatorEquals")}</SelectItem>
-                                                  <SelectItem value="not_equals">{tAI("conditionEditor.operatorNotEquals")}</SelectItem>
-                                                </>
-                                              ) : (
-                                                <>
-                                                  <SelectItem value="lte">{tAI("conditionEditor.operatorLte")}</SelectItem>
-                                                  <SelectItem value="gte">{tAI("conditionEditor.operatorGte")}</SelectItem>
-                                                </>
-                                              )}
-                                            </SelectContent>
-                                          </Select>
-
-                                          {src.type === 'multiple_choice' ? (
+                                        <div className="space-y-2 pt-1">
+                                          {src.type === 'matrix_rating' && (
                                             <Select
-                                              value={String(cond.value)}
+                                              value={cond.subOption || MATRIX_AVG_TARGET}
                                               onValueChange={(val: any) => {
                                                 if (!val) return
                                                 const updated = [...conditions]
-                                                updated[condIdx] = { ...cond, value: String(val) }
+                                                updated[condIdx] = { ...cond, subOption: String(val) }
                                                 handleUpdateConditions(field.id, updated)
                                               }}
                                             >
-                                              <SelectTrigger className="h-8 text-xs flex-1 border-slate-200 dark:border-slate-700">
-                                                <SelectValue placeholder={tAI("conditionEditor.pickOption")} />
+                                              <SelectTrigger className="h-8 text-xs w-full border-slate-200 dark:border-slate-700">
+                                                <SelectValue>
+                                                  {(val: string | null) =>
+                                                    !val || val === MATRIX_AVG_TARGET
+                                                      ? tAI("conditionEditor.matrixOverallAverage")
+                                                      : val
+                                                  }
+                                                </SelectValue>
                                               </SelectTrigger>
                                               <SelectContent>
-                                                {src.options.map((opt, i) => (
-                                                  <SelectItem key={i} value={opt}>
-                                                    {opt || `Option ${i + 1}`}
-                                                  </SelectItem>
-                                                ))}
-                                              </SelectContent>
-                                            </Select>
-                                          ) : (
-                                            <Select
-                                              value={String(cond.value)}
-                                              onValueChange={(val: any) => {
-                                                if (!val) return
-                                                const updated = [...conditions]
-                                                updated[condIdx] = { ...cond, value: Number(val) }
-                                                handleUpdateConditions(field.id, updated)
-                                              }}
-                                            >
-                                              <SelectTrigger className="h-8 text-xs flex-1 border-slate-200 dark:border-slate-700">
-                                                <SelectValue />
-                                              </SelectTrigger>
-                                              <SelectContent>
-                                                {(src.type === 'star_rating' ? [1, 2, 3, 4, 5] : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]).map(n => (
-                                                  <SelectItem key={n} value={String(n)}>{n}</SelectItem>
-                                                ))}
+                                                <SelectItem value={MATRIX_AVG_TARGET}>
+                                                  {tAI("conditionEditor.matrixOverallAverage")}
+                                                </SelectItem>
+                                                {src.options
+                                                  .filter(opt => opt.trim() !== "")
+                                                  .map((opt, i) => (
+                                                    <SelectItem key={i} value={opt}>
+                                                      {opt}
+                                                    </SelectItem>
+                                                  ))}
                                               </SelectContent>
                                             </Select>
                                           )}
+
+                                          <div className="flex items-center gap-2">
+                                            <Select
+                                              value={cond.operator}
+                                              onValueChange={(val: any) => {
+                                                if (!val) return
+                                                const updated = [...conditions]
+                                                updated[condIdx] = { ...cond, operator: val }
+                                                handleUpdateConditions(field.id, updated)
+                                              }}
+                                            >
+                                              <SelectTrigger className="h-8 text-xs w-28 border-slate-200 dark:border-slate-700">
+                                                <SelectValue>
+                                                  {(val: string | null) =>
+                                                    val
+                                                      ? ({
+                                                          equals: tAI("conditionEditor.operatorEquals"),
+                                                          not_equals: tAI("conditionEditor.operatorNotEquals"),
+                                                          lte: tAI("conditionEditor.operatorLte"),
+                                                          gte: tAI("conditionEditor.operatorGte"),
+                                                        }[val] ?? val)
+                                                      : ""
+                                                  }
+                                                </SelectValue>
+                                              </SelectTrigger>
+                                              <SelectContent>
+                                                {src.type === 'multiple_choice' ? (
+                                                  <>
+                                                    <SelectItem value="equals">{tAI("conditionEditor.operatorEquals")}</SelectItem>
+                                                    <SelectItem value="not_equals">{tAI("conditionEditor.operatorNotEquals")}</SelectItem>
+                                                  </>
+                                                ) : (
+                                                  <>
+                                                    <SelectItem value="lte">{tAI("conditionEditor.operatorLte")}</SelectItem>
+                                                    <SelectItem value="gte">{tAI("conditionEditor.operatorGte")}</SelectItem>
+                                                  </>
+                                                )}
+                                              </SelectContent>
+                                            </Select>
+
+                                            {src.type === 'multiple_choice' ? (
+                                              <Select
+                                                value={String(cond.value)}
+                                                onValueChange={(val: any) => {
+                                                  if (!val) return
+                                                  const updated = [...conditions]
+                                                  updated[condIdx] = { ...cond, value: String(val) }
+                                                  handleUpdateConditions(field.id, updated)
+                                                }}
+                                              >
+                                                <SelectTrigger className="h-8 text-xs flex-1 border-slate-200 dark:border-slate-700">
+                                                  <SelectValue placeholder={tAI("conditionEditor.pickOption")} />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                  {src.options
+                                                    .filter(opt => opt.trim() !== "")
+                                                    .map((opt, i) => (
+                                                      <SelectItem key={i} value={opt}>
+                                                        {opt}
+                                                      </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                              </Select>
+                                            ) : (
+                                              <Select
+                                                value={String(cond.value)}
+                                                onValueChange={(val: any) => {
+                                                  if (!val) return
+                                                  const updated = [...conditions]
+                                                  updated[condIdx] = { ...cond, value: Number(val) }
+                                                  handleUpdateConditions(field.id, updated)
+                                                }}
+                                              >
+                                                <SelectTrigger className="h-8 text-xs flex-1 border-slate-200 dark:border-slate-700">
+                                                  <SelectValue />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                  {(src.type === 'matrix_rating'
+                                                    ? [0, 1, 2, 3, 4, 5]
+                                                    : src.type === 'star_rating'
+                                                    ? [1, 2, 3, 4, 5]
+                                                    : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+                                                  ).map(n => (
+                                                    <SelectItem key={n} value={String(n)}>{n}</SelectItem>
+                                                  ))}
+                                                </SelectContent>
+                                              </Select>
+                                            )}
+                                          </div>
                                         </div>
                                       )}
                                     </div>
@@ -1578,8 +1813,9 @@ export function FormBuilder({
                                   if (!firstSrc) return
                                   const newCond: FieldCondition = {
                                     fieldId: firstSrc.id,
-                                    operator: (firstSrc.type === 'star_rating' || firstSrc.type === 'numeric_scale') ? 'lte' : 'equals',
-                                    value: firstSrc.type === 'star_rating' ? 3 : firstSrc.type === 'numeric_scale' ? 5 : (firstSrc.options[0] ?? ''),
+                                    operator: (firstSrc.type === 'star_rating' || firstSrc.type === 'numeric_scale' || firstSrc.type === 'matrix_rating') ? 'lte' : 'equals',
+                                    value: firstSrc.type === 'star_rating' ? 3 : firstSrc.type === 'numeric_scale' ? 5 : firstSrc.type === 'matrix_rating' ? 3 : (firstSrc.options[0] ?? ''),
+                                    ...(firstSrc.type === 'matrix_rating' ? { subOption: MATRIX_AVG_TARGET } : {}),
                                   }
                                   handleUpdateConditions(field.id, [...conditions, newCond])
                                 }}

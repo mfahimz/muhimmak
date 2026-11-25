@@ -5,6 +5,13 @@ import { guardAnalyticsAccess } from '@/server/lib/analytics-access';
 import { decryptPlate } from '@/lib/utils/plate-number';
 import { computeWeightedScore } from '@/server/services/sessions.service';
 import { deepseek, DEEPSEEK_MODEL, DEEPSEEK_NO_THINKING } from '@/server/lib/deepseek';
+import {
+  computeMatrixAverageRaw,
+  formatMatrixAnswerSummary,
+  getMatrixRatedKeys,
+  isMatrixAnswer,
+  isValidMatrixScore,
+} from '@/lib/forms/matrix';
 import ExcelJS from 'exceljs';
 
 export interface QuestionMeta {
@@ -13,11 +20,20 @@ export interface QuestionMeta {
   labelAr: string | null;
   type: string;
   options: string[];
+  optionsAr?: string[];
   optionScores?: number[];
   weight: number;
   roleTag: string;
   visitStage: string;
   order: number;
+}
+
+export interface MatrixOptionStat {
+  labelEn: string;
+  labelAr: string | null;
+  averageRating: number | null;
+  averageNormalizedScore: number | null;
+  ratedCount: number;
 }
 
 export interface QuestionSummaryStat {
@@ -32,6 +48,7 @@ export interface QuestionSummaryStat {
   averageRating: number | null;
   averageNormalizedScore: number | null;
   choiceDistribution: { label: string; count: number; percentage: number }[];
+  matrixOptionStats?: MatrixOptionStat[];
   textCount: number;
 }
 
@@ -60,7 +77,7 @@ interface FormField {
   id: string;
   label?: string;
   name?: string;
-  ar?: { label?: string };
+  ar?: { label?: string; options?: string[] };
   type?: string;
   options?: string[];
   optionScores?: number[];
@@ -171,6 +188,7 @@ export async function fetchLiveResponsesData(options?: {
           labelAr: field.ar?.label || null,
           type: field.type || 'text',
           options: Array.isArray(field.options) ? field.options : [],
+          optionsAr: Array.isArray(field.ar?.options) ? field.ar.options : undefined,
           optionScores: Array.isArray(field.optionScores) ? field.optionScores : undefined,
           weight: typeof field.weight === 'number' ? field.weight : 0,
           roleTag: field.roleTag || field.domain || 'general',
@@ -224,6 +242,11 @@ export async function fetchLiveResponsesData(options?: {
           const optIdx = Array.isArray(field.options) ? field.options.indexOf(String(ans)) : -1;
           if (optIdx !== -1 && Array.isArray(field.optionScores) && field.optionScores[optIdx] !== undefined) {
             perQuestionScores[field.id] = field.optionScores[optIdx];
+          }
+        } else if (field.type === 'matrix_rating') {
+          const matrixRes = computeMatrixAverageRaw(field, ans, answers._matrixRated);
+          if (matrixRes) {
+            perQuestionScores[field.id] = Math.round(matrixRes.normalizedScore);
           }
         } else if (field.type === 'text') {
           const scored = textScores[field.id];
@@ -332,7 +355,47 @@ export async function fetchLiveResponsesData(options?: {
       if (normScores.length > 0) {
         averageNormalizedScore = Math.round(normScores.reduce((sum, n) => sum + n, 0) / normScores.length);
       }
+    } else if (q.type === 'matrix_rating') {
+      const rawAverages: number[] = [];
+      const normScores: number[] = [];
+      enrichedResponses.forEach((r) => {
+        const res = computeMatrixAverageRaw(q, r.answers[q.id], r.answers._matrixRated);
+        if (res) {
+          rawAverages.push(res.averageRaw);
+          normScores.push(res.normalizedScore);
+        }
+      });
+      if (rawAverages.length > 0) {
+        averageRating = Math.round((rawAverages.reduce((sum, n) => sum + n, 0) / rawAverages.length) * 10) / 10;
+        averageNormalizedScore = Math.round(normScores.reduce((sum, n) => sum + n, 0) / normScores.length);
+      }
     }
+
+    const matrixOptionStats: MatrixOptionStat[] | undefined =
+      q.type === 'matrix_rating'
+        ? q.options.map((opt, optIdx) => {
+            const optScores: number[] = [];
+            enrichedResponses.forEach((r) => {
+              const ans = r.answers[q.id];
+              if (!isMatrixAnswer(ans)) return;
+              const ratedKeys = getMatrixRatedKeys(q, ans, r.answers._matrixRated);
+              if (!ratedKeys.includes(opt)) return;
+              const val = ans[opt];
+              if (isValidMatrixScore(val)) optScores.push(val);
+            });
+            const optAvg =
+              optScores.length > 0
+                ? Math.round((optScores.reduce((s, n) => s + n, 0) / optScores.length) * 10) / 10
+                : null;
+            return {
+              labelEn: opt,
+              labelAr: q.optionsAr?.[optIdx]?.trim() || null,
+              averageRating: optAvg,
+              averageNormalizedScore: optAvg !== null ? Math.round((optAvg / 5) * 100) : null,
+              ratedCount: optScores.length,
+            };
+          })
+        : undefined;
 
     const choiceDistribution: { label: string; count: number; percentage: number }[] = [];
     if (q.type === 'multiple_choice') {
@@ -364,6 +427,7 @@ export async function fetchLiveResponsesData(options?: {
       averageRating,
       averageNormalizedScore,
       choiceDistribution,
+      matrixOptionStats,
       textCount: q.type === 'text' ? totalAnswers : 0,
     };
   });
@@ -535,7 +599,13 @@ export async function runAiBatchScoring(): Promise<{
 
       const answerText = fields
         .filter((f: FormField) => resp.answers[f.id] !== undefined && resp.answers[f.id] !== null)
-        .map((f: FormField) => `Q: ${f.label}\nA: ${resp.answers[f.id]}`)
+        .map((f: FormField) => {
+          const val =
+            f.type === 'matrix_rating'
+              ? formatMatrixAnswerSummary(f, resp.answers[f.id], resp.answers._matrixRated, false)
+              : resp.answers[f.id];
+          return `Q: ${f.label}\nA: ${val}`;
+        })
         .join('\n\n');
 
       if (!answerText.trim()) continue;
@@ -659,6 +729,16 @@ export async function generateLiveResponsesExcelBuffer(): Promise<Buffer> {
         const normScore = r.perQuestionScores[q.id];
         const formattedDate = r.submittedAt ? r.submittedAt.replace('T', ' ').substring(0, 16) : '';
 
+        const formattedAnswer =
+          q.type === 'matrix_rating'
+            ? formatMatrixAnswerSummary(
+                { id: q.id, options: q.options, ar: { options: q.optionsAr } },
+                ans,
+                r.answers._matrixRated,
+                false
+              )
+            : String(ans);
+
         const dataRow = ws1.addRow([
           q.id,
           q.visitStage.replace('_', ' ').toUpperCase(),
@@ -670,7 +750,7 @@ export async function generateLiveResponsesExcelBuffer(): Promise<Buffer> {
           r.mobileNumber || 'N/A',
           r.language.toUpperCase(),
           formattedDate,
-          String(ans),
+          formattedAnswer,
           normScore !== undefined ? normScore : 'N/A',
           r.overallScore !== null ? r.overallScore : 'N/A',
           r.channel,
@@ -737,7 +817,20 @@ export async function generateLiveResponsesExcelBuffer(): Promise<Buffer> {
 
     data.questions.forEach((q) => {
       const ans = r.answers[q.id];
-      rowValues.push(ans !== undefined && ans !== null ? String(ans) : '');
+      if (ans === undefined || ans === null) {
+        rowValues.push('');
+      } else if (q.type === 'matrix_rating') {
+        rowValues.push(
+          formatMatrixAnswerSummary(
+            { id: q.id, options: q.options, ar: { options: q.optionsAr } },
+            ans,
+            r.answers._matrixRated,
+            false
+          )
+        );
+      } else {
+        rowValues.push(String(ans));
+      }
     });
 
     const dataRow = ws2.addRow(rowValues);
@@ -783,7 +876,7 @@ export async function generateLiveResponsesExcelBuffer(): Promise<Buffer> {
   data.questionStats.forEach((qs) => {
     let avgStr = 'N/A';
     if (qs.averageRating !== null) {
-      avgStr = `${qs.averageRating} / ${qs.type === 'star_rating' ? 5 : 10} (${qs.averageNormalizedScore}%)`;
+      avgStr = `${qs.averageRating} / ${qs.type === 'star_rating' || qs.type === 'matrix_rating' ? 5 : 10} (${qs.averageNormalizedScore}%)`;
     } else if (qs.averageNormalizedScore !== null) {
       avgStr = `${qs.averageNormalizedScore}% avg score`;
     }
@@ -791,6 +884,10 @@ export async function generateLiveResponsesExcelBuffer(): Promise<Buffer> {
     let distStr = '';
     if (qs.type === 'multiple_choice') {
       distStr = qs.choiceDistribution.map((c) => `${c.label}: ${c.count} (${c.percentage}%)`).join(' | ');
+    } else if (qs.type === 'matrix_rating' && qs.matrixOptionStats) {
+      distStr = qs.matrixOptionStats
+        .map((m) => `${m.labelEn}: ${m.averageRating !== null ? `${m.averageRating}/5` : 'N/A'} (n=${m.ratedCount})`)
+        .join(' | ');
     } else if (qs.type === 'text') {
       distStr = `${qs.textCount} text comments received`;
     }

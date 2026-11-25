@@ -55,6 +55,11 @@ function questionLine(q: QuestionAnalysis): string {
       .sort((a, b) => b.count - a.count)
       .map((o) => `"${clean(o.labelEn, 70)}" ${o.count} (${o.pct}%)`);
     if (shown.length > 0) parts.push(`answers: ${shown.join('; ')}`);
+  } else if (q.type === 'matrix_rating') {
+    const shown = q.options
+      .filter((o) => o.count > 0 && o.score !== null)
+      .map((o) => `"${clean(o.labelEn, 70)}" avg ${Math.round(((o.score ?? 0) / 20) * 10) / 10}/5 (${o.score}%, n=${o.count})`);
+    if (shown.length > 0) parts.push(`sub-items: ${shown.join('; ')}`);
   } else if (q.scaleMax) {
     const dist = q.options.filter((o) => o.count > 0).map((o) => `${o.key}:${o.count}`);
     if (dist.length > 0) parts.push(`value counts: ${dist.join(' ')}`);
@@ -199,6 +204,12 @@ export function buildReportDigest(report: AnalyticsReport, opts: DigestOptions =
       lines.push('Per answer, with the average score of those customers on the rest of the survey (this question excluded):');
       for (const opt of focus.options.filter((x) => x.count > 0)) {
         lines.push(`- "${clean(opt.labelEn, 80)}": ${opt.count} customers (${opt.pct}%), answer score ${opt.score ?? 'n/a'}, rest of survey average ${opt.restAvg ?? 'n/a (fewer than 3)'}`);
+      }
+    } else if (focus.type === 'matrix_rating') {
+      lines.push('Per sub-item average score (out of 5 and 0..100):');
+      for (const opt of focus.options.filter((x) => x.count > 0)) {
+        const avg5 = opt.score !== null ? Math.round((opt.score / 20) * 10) / 10 : 'n/a';
+        lines.push(`- "${clean(opt.labelEn, 80)}": ${opt.count} ratings, avg ${avg5}/5 (${opt.score ?? 'n/a'}/100)`);
       }
     }
     const related =

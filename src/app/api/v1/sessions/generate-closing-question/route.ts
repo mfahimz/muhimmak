@@ -77,8 +77,11 @@ export async function POST(request: Request) {
     // Construct the user prompt with lean context
     let answeredContext = '';
     for (const [fieldId, value] of Object.entries(answers)) {
+      if (fieldId.startsWith('_')) continue;
       const label = questionLabels[fieldId] || 'Question';
-      answeredContext += `- Question: "${label}"\n  Answer: "${value}"\n`;
+      const formattedVal =
+        value && typeof value === 'object' ? JSON.stringify(value) : String(value);
+      answeredContext += `- Question: "${label}"\n  Answer: "${formattedVal}"\n`;
     }
 
     const userPrompt = `You are generating a single closing question for a customer who is finishing the "${visitStage}" stage of their service visit.

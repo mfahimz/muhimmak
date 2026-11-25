@@ -12,17 +12,18 @@ interface QuestionsTabProps {
   onOpenComments: () => void;
 }
 
-function AnswerRow({ o, label }: { o: OptionStat; label: string }) {
+function AnswerRow({ o, label, isMatrix }: { o: OptionStat; label: string; isMatrix?: boolean }) {
   const { num, pct } = useFmt();
+  const avgOutOf5 = o.score !== null ? Math.round((o.score / 20) * 10) / 10 : null;
   return (
-    <li className="grid grid-cols-[minmax(0,1fr)_5rem_4.5rem] items-center gap-3 text-sm sm:grid-cols-[minmax(0,1fr)_8rem_4.5rem]">
+    <li className="grid grid-cols-[minmax(0,1fr)_5rem_5.5rem] items-center gap-3 text-sm sm:grid-cols-[minmax(0,1fr)_8rem_5.5rem]">
       <span className={`inline-flex min-w-0 items-center gap-2 ${o.count === 0 ? "text-muted-foreground" : "text-foreground"}`}>
         <span className={`size-1.5 shrink-0 rounded-full ${o.bucket ? BUCKET_FILL[o.bucket] : "bg-muted-foreground/40"}`} aria-hidden />
         <span className="truncate">{label}</span>
       </span>
       <Meter value={o.pct} className={o.bucket ? BUCKET_FILL[o.bucket] : "bg-primary"} />
-      <span className="text-end text-xs text-muted-foreground">
-        {num(o.count)} · {pct(o.pct)}
+      <span className="text-end text-xs text-muted-foreground tabular-nums">
+        {isMatrix ? `${num(avgOutOf5)}/${num(5)} · ${num(o.count)}` : `${num(o.count)} · ${pct(o.pct)}`}
       </span>
     </li>
   );
@@ -31,7 +32,8 @@ function AnswerRow({ o, label }: { o: OptionStat; label: string }) {
 function QuestionDetail({ q, onAsk }: { q: QuestionAnalysis; onAsk: QuestionsTabProps["onAsk"] }) {
   const { t, num, label, isAr } = useFmt();
   const isScale = q.type === "star_rating" || q.type === "numeric_scale";
-  // Scales list only the values somebody chose, highest first. Choices keep the form order.
+  const isMatrix = q.type === "matrix_rating";
+  // Scales list only the values somebody chose, highest first. Choices & matrix sub-items keep form order.
   const rows = isScale ? q.options.filter((o) => o.count > 0).sort((a, b) => Number(b.key) - Number(a.key)) : q.options;
   const { ar, en } = q.byLanguage;
 
@@ -39,7 +41,12 @@ function QuestionDetail({ q, onAsk }: { q: QuestionAnalysis; onAsk: QuestionsTab
     <div className="space-y-4 border-t border-border bg-muted/30 px-4 py-4">
       <ul className="max-w-xl space-y-2">
         {rows.map((o) => (
-          <AnswerRow key={o.key} o={o} label={isScale ? t("q.rated", { value: num(o.key) }) : isAr && o.labelAr ? o.labelAr : o.labelEn} />
+          <AnswerRow
+            key={o.key}
+            o={o}
+            isMatrix={isMatrix}
+            label={isScale ? t("q.rated", { value: num(o.key) }) : isAr && o.labelAr ? o.labelAr : o.labelEn}
+          />
         ))}
       </ul>
 

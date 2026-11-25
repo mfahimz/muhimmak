@@ -6,17 +6,18 @@ import { useTranslations } from "next-intl"
 import { useIdleTimer } from "@/hooks/useIdleTimer"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { ChevronLeft, AlertTriangle, ArrowRight, RefreshCw, QrCode, ThumbsUp, Loader2, ShieldCheck } from "lucide-react"
+import { ChevronLeft, AlertTriangle, ArrowRight, RefreshCw, QrCode, ThumbsUp, Loader2, ShieldCheck, X } from "lucide-react"
 import { QRCodeSVG } from "qrcode.react"
 import { toArabicNumerals } from "@/lib/utils/arabic-numerals"
-import { FieldCondition, normalizeDependsOn } from "@/lib/forms/condition"
+import { FieldCondition, MATRIX_AVG_TARGET, normalizeDependsOn } from "@/lib/forms/condition"
+import { computeMatrixAverageRaw, isMatrixAnswer, normalizeMatrixDigitInput } from "@/lib/forms/matrix"
 import type { QuestionDomain } from "@/lib/forms/domain"
 import { AutoversaAnnouncement } from "@/components/AutoversaAnnouncement"
 import { AnnouncementCard } from "@/components/AnnouncementCard"
 
 export interface SurveyField {
   id: string
-  type: "star_rating" | "text" | "multiple_choice" | "numeric_scale"
+  type: "star_rating" | "text" | "multiple_choice" | "numeric_scale" | "matrix_rating"
   label: string
   required: boolean
   options: string[]
@@ -55,13 +56,47 @@ interface SurveyClientProps {
   initialLanguageSwitches?: number
 }
 
-function isFieldVisible(field: SurveyField, answers: Record<string, any>): boolean {
+function isFieldVisible(
+  field: SurveyField,
+  answers: Record<string, any>,
+  allFields?: SurveyField[],
+  matrixRatedMap?: Record<string, string[]>
+): boolean {
   const conditions = normalizeDependsOn(field.dependsOn)
   if (conditions.length === 0) return true
 
   return conditions.every(cond => {
+    const sourceField = allFields?.find(f => f.id === cond.fieldId)
     const sourceAnswer = answers[cond.fieldId]
-    if (sourceAnswer === undefined) return false
+    if (sourceAnswer === undefined || sourceAnswer === null) return false
+
+    if (sourceField?.type === 'matrix_rating' || isMatrixAnswer(sourceAnswer)) {
+      const ratedMap = matrixRatedMap ?? answers._matrixRated
+      let numericVal: number | null = null
+
+      if (cond.subOption && cond.subOption !== MATRIX_AVG_TARGET) {
+        const explicitRated =
+          ratedMap && typeof ratedMap === 'object'
+            ? (ratedMap as Record<string, unknown>)[cond.fieldId]
+            : undefined
+        if (Array.isArray(explicitRated) && !explicitRated.includes(cond.subOption)) {
+          return false
+        }
+        const rawVal = (sourceAnswer as Record<string, unknown>)[cond.subOption]
+        if (typeof rawVal === 'number' && Number.isFinite(rawVal)) {
+          numericVal = rawVal
+        }
+      } else if (sourceField) {
+        const avg = computeMatrixAverageRaw(sourceField, sourceAnswer, ratedMap)
+        numericVal = avg ? avg.averageRaw : null
+      }
+
+      if (numericVal === null) return false
+      if (cond.operator === 'lte') return numericVal <= Number(cond.value)
+      if (cond.operator === 'gte') return numericVal >= Number(cond.value)
+      return false
+    }
+
     switch (cond.operator) {
       case 'equals':
         return sourceAnswer === cond.value
@@ -118,6 +153,9 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
   const [currentFieldIdx, setCurrentFieldIdx] = React.useState(0)
   const [answers, setAnswers] = React.useState<Record<string, any>>({})
   const [textVal, setTextVal] = React.useState("")
+  const [matrixDraft, setMatrixDraft] = React.useState<Record<string, string>>({})
+  const [matrixRated, setMatrixRated] = React.useState<Record<string, string[]>>({})
+  const matrixRatedRef = React.useRef<Record<string, string[]>>({})
   const [submitting, setSubmitting] = React.useState(false)
   const [showQr, setShowQr] = React.useState(false)
   const [announcement, setAnnouncement] = React.useState<{
@@ -140,8 +178,8 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
   }, [fields, extraFields])
 
   const visibleFields = React.useMemo(() => {
-    return combinedFields.filter(f => isFieldVisible(f, answers))
-  }, [combinedFields, answers])
+    return combinedFields.filter(f => isFieldVisible(f, answers, combinedFields, matrixRated))
+  }, [combinedFields, answers, matrixRated])
 
   const isClosing = React.useMemo(() => {
     const field = visibleFields[currentFieldIdx]
@@ -186,6 +224,43 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
       }).catch(() => {})
     }
   }, [step, currentField?.id, session.id])
+
+  const syncDraftsForField = (
+    nextField: SurveyField | undefined,
+    nextAnswers: Record<string, any>,
+    nextMatrixRated: Record<string, string[]>
+  ) => {
+    if (!nextField) {
+      setTextVal("")
+      setMatrixDraft({})
+      return
+    }
+    if (nextField.type === "text") {
+      setTextVal(typeof nextAnswers[nextField.id] === "string" ? nextAnswers[nextField.id] : "")
+      setMatrixDraft({})
+    } else if (nextField.type === "matrix_rating") {
+      setTextVal("")
+      const existing = nextAnswers[nextField.id]
+      const rated = nextMatrixRated[nextField.id]
+      const nextDraft: Record<string, string> = {}
+      nextField.options.forEach((opt) => {
+        if (
+          isMatrixAnswer(existing) &&
+          (!rated || rated.includes(opt)) &&
+          existing[opt] !== undefined &&
+          existing[opt] !== null
+        ) {
+          nextDraft[opt] = String(existing[opt])
+        } else {
+          nextDraft[opt] = ""
+        }
+      })
+      setMatrixDraft(nextDraft)
+    } else {
+      setTextVal("")
+      setMatrixDraft({})
+    }
+  }
 
   // PHASE 2 NOTE: google_review_qr_shown only confirms the QR code was 
   // displayed on screen, NOT that a customer actually scanned it with 
@@ -457,7 +532,11 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
   }
 
   // Answer handlers
-  const handleAnswer = (val: any, autoAdvance = true) => {
+  const handleAnswer = (
+    val: any,
+    autoAdvance = true,
+    nextMatrixRated: Record<string, string[]> = matrixRated
+  ) => {
     recordTimeForCurrentQuestion()
     setAnswers(prev => ({ ...prev, [currentField.id]: val }))
 
@@ -508,8 +587,8 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
     const isAr = session.language === 'ar'
     if (!isAr && session.visit_stage && aiClosingQuestionStatus === 'idle') {
       const updatedAnswers = { ...answers, [currentField.id]: val }
-      // Filter out meta keys like _textScores
-      const answeredKeys = Object.keys(updatedAnswers).filter(k => k !== '_textScores')
+      // Filter out meta keys like _textScores / _matrixRated
+      const answeredKeys = Object.keys(updatedAnswers).filter(k => !k.startsWith('_'))
       const triggerThreshold = Math.ceil(fields.length * 0.5)
 
       if (answeredKeys.length >= triggerThreshold) {
@@ -519,14 +598,17 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
 
     if (autoAdvance) {
       const updatedAnswers = { ...answers, [currentField.id]: val }
-      const nextVisibleFields = combinedFields.filter(f => isFieldVisible(f, updatedAnswers))
+      const nextVisibleFields = combinedFields.filter(f =>
+        isFieldVisible(f, updatedAnswers, combinedFields, nextMatrixRated)
+      )
       const isLastVisible = currentFieldIdx >= nextVisibleFields.length - 1
 
       if (!isLastVisible) {
-        setTextVal("")
-        setCurrentFieldIdx(prev => prev + 1)
+        const nextIdx = currentFieldIdx + 1
+        syncDraftsForField(nextVisibleFields[nextIdx], updatedAnswers, nextMatrixRated)
+        setCurrentFieldIdx(nextIdx)
       } else {
-        handleSubmitSurvey(updatedAnswers)
+        handleSubmitSurvey(updatedAnswers, nextMatrixRated)
       }
     }
   }
@@ -538,14 +620,36 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
   const handleSkip = () => {
     if (submitting) return
     recordTimeForCurrentQuestion()
-    setTextVal("")
-    const nextVisibleFields = combinedFields.filter(f => isFieldVisible(f, answers))
+
+    let nextAnswers = answers
+    let nextRated = matrixRated
+    if (currentField?.type === "matrix_rating") {
+      if (answers[currentField.id] !== undefined) {
+        const cleaned = { ...answers }
+        delete cleaned[currentField.id]
+        nextAnswers = cleaned
+        setAnswers(cleaned)
+      }
+      if (matrixRated[currentField.id]) {
+        const cleanedRated = { ...matrixRated }
+        delete cleanedRated[currentField.id]
+        nextRated = cleanedRated
+        matrixRatedRef.current = cleanedRated
+        setMatrixRated(cleanedRated)
+      }
+    }
+
+    const nextVisibleFields = combinedFields.filter(f =>
+      isFieldVisible(f, nextAnswers, combinedFields, nextRated)
+    )
     const isLastVisible = currentFieldIdx >= nextVisibleFields.length - 1
 
     if (!isLastVisible) {
-      setCurrentFieldIdx(prev => prev + 1)
+      const nextIdx = currentFieldIdx + 1
+      syncDraftsForField(nextVisibleFields[nextIdx], nextAnswers, nextRated)
+      setCurrentFieldIdx(nextIdx)
     } else {
-      handleSubmitSurvey(answers)
+      handleSubmitSurvey(nextAnswers, nextRated)
     }
   }
 
@@ -558,6 +662,26 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
       } else {
         handleSkip()
       }
+    } else if (currentField?.type === "matrix_rating") {
+      const ratedKeys = currentField.options.filter(
+        (opt) => matrixDraft[opt] !== undefined && matrixDraft[opt] !== ""
+      )
+      if (ratedKeys.length === 0) {
+        handleSkip()
+        return
+      }
+      const matrixAnswer: Record<string, number> = {}
+      currentField.options.forEach((opt) => {
+        const raw = matrixDraft[opt]
+        matrixAnswer[opt] = raw !== undefined && raw !== "" ? Number(raw) : 0
+      })
+      const nextRated = {
+        ...matrixRated,
+        [currentField.id]: ratedKeys,
+      }
+      matrixRatedRef.current = nextRated
+      setMatrixRated(nextRated)
+      handleAnswer(matrixAnswer, true, nextRated)
     } else if (currentField) {
       const existingAnswer = answers[currentField.id]
       if (existingAnswer !== undefined && existingAnswer !== null) {
@@ -572,14 +696,18 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
     if (currentFieldIdx > 0) {
       recordTimeForCurrentQuestion()
       backButtonCountRef.current += 1
-      const prevField = visibleFields[currentFieldIdx - 1]
-      setTextVal(answers[prevField.id] || "")
-      setCurrentFieldIdx(prev => prev - 1)
+      const prevIdx = currentFieldIdx - 1
+      const prevField = visibleFields[prevIdx]
+      syncDraftsForField(prevField, answers, matrixRated)
+      setCurrentFieldIdx(prevIdx)
     }
   }
 
   // Submit survey successfully
-  const handleSubmitSurvey = async (finalAnswers: Record<string, any>) => {
+  const handleSubmitSurvey = async (
+    finalAnswers: Record<string, any>,
+    finalMatrixRated: Record<string, string[]> = matrixRated
+  ) => {
     if (isSubmittingSurvey.current || isAcceptingConsent.current || isRefusingConsent.current) return
     isSubmittingSurvey.current = true
     setSubmitting(true)
@@ -603,6 +731,7 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
 
     const payloadAnswers = {
       ...finalAnswers,
+      ...(Object.keys(finalMatrixRated).length > 0 ? { _matrixRated: finalMatrixRated } : {}),
       _skippedSummary: {
         count: skippedList.length,
         byType: skippedByTypes,
@@ -675,7 +804,12 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
         body: JSON.stringify({
           sessionId: session.id,
           action: "abandoned",
-          answers: Object.keys(answers).length > 0 ? answers : null,
+          answers: Object.keys(answers).length > 0
+            ? {
+                ...answers,
+                ...(Object.keys(matrixRatedRef.current).length > 0 ? { _matrixRated: matrixRatedRef.current } : {}),
+              }
+            : null,
           deviceInfo: typeof window !== "undefined" ? window.navigator.userAgent : "kiosk_tablet",
           interaction_metadata: interactionMetadata,
         }),
@@ -1075,6 +1209,120 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
                       disabled={submitting}
                       className="flex w-full rounded-xl border border-slate-250 bg-transparent px-4 py-3 text-base shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 text-slate-900 dark:text-slate-100 border-slate-200 dark:border-slate-800"
                     />
+                  </div>
+                )}
+
+                {currentField.type === "matrix_rating" && (
+                  <div className="w-full space-y-3 py-2">
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      {t("matrixHint")}
+                    </p>
+                    <div className="space-y-2.5">
+                      {currentField.options.map((englishOption: string, idx: number) => {
+                        const displayOption =
+                          isArabic && currentField.ar?.options?.[idx]?.trim()
+                            ? currentField.ar.options[idx]
+                            : englishOption
+                        const draftVal = matrixDraft[englishOption] ?? ""
+                        const isEntered = draftVal !== ""
+
+                        return (
+                          <div
+                            key={idx}
+                            className={`flex items-center justify-between gap-4 rounded-xl border px-4 py-3 transition-colors ${
+                              isEntered
+                                ? "border-indigo-300 bg-indigo-50/40 dark:border-indigo-800 dark:bg-indigo-950/20"
+                                : "border-slate-200 bg-slate-50/50 dark:border-slate-800 dark:bg-slate-900/30"
+                            }`}
+                          >
+                            <span className="text-sm sm:text-base font-medium text-slate-800 dark:text-slate-100 flex-1 text-start">
+                              {displayOption}
+                            </span>
+
+                            <div className="flex items-center gap-2 shrink-0" dir="ltr">
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                pattern="[0-5]"
+                                value={draftVal}
+                                disabled={submitting}
+                                placeholder="0–5"
+                                aria-label={`${displayOption} (0-5)`}
+                                onFocus={(e) => e.currentTarget.select()}
+                                onKeyDown={(e) => {
+                                  if (
+                                    e.ctrlKey ||
+                                    e.metaKey ||
+                                    e.altKey ||
+                                    [
+                                      "Backspace",
+                                      "Delete",
+                                      "Tab",
+                                      "ArrowLeft",
+                                      "ArrowRight",
+                                      "ArrowUp",
+                                      "ArrowDown",
+                                      "Home",
+                                      "End",
+                                      "Enter",
+                                    ].includes(e.key)
+                                  ) {
+                                    return
+                                  }
+                                  if (e.key.length === 1 && normalizeMatrixDigitInput(e.key) === null) {
+                                    e.preventDefault()
+                                  }
+                                }}
+                                onChange={(e) => {
+                                  const raw = e.target.value
+                                  let candidate = raw
+                                  if (raw.length === 2 && draftVal.length === 1) {
+                                    candidate = raw[0] === draftVal ? raw[1] : raw[1] === draftVal ? raw[0] : raw
+                                  }
+                                  const normalized = normalizeMatrixDigitInput(candidate)
+                                  if (normalized === null) return
+                                  setMatrixDraft((prev) => ({
+                                    ...prev,
+                                    [englishOption]: normalized,
+                                  }))
+                                }}
+                                onPaste={(e) => {
+                                  e.preventDefault()
+                                  const pasted = e.clipboardData.getData("text")
+                                  const normalized = normalizeMatrixDigitInput(pasted)
+                                  if (normalized !== null) {
+                                    setMatrixDraft((prev) => ({
+                                      ...prev,
+                                      [englishOption]: normalized,
+                                    }))
+                                  }
+                                }}
+                                className="h-11 w-16 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-center text-lg font-bold text-slate-900 dark:text-slate-100 shadow-xs focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:opacity-50"
+                              />
+                              <span className="text-sm font-semibold text-slate-400 tabular-nums">
+                                / {toArabicNumerals(5, isArabic ? "ar" : "en")}
+                              </span>
+                              {isEntered && (
+                                <button
+                                  type="button"
+                                  disabled={submitting}
+                                  onClick={() =>
+                                    setMatrixDraft((prev) => ({
+                                      ...prev,
+                                      [englishOption]: "",
+                                    }))
+                                  }
+                                  aria-label={t("matrixClearOption")}
+                                  className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                                >
+                                  <X className="size-4" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
                   </div>
                 )}
               </div>
