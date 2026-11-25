@@ -17,6 +17,7 @@ import { AnnouncementCard } from "@/components/AnnouncementCard"
 
 export interface SurveyField {
   id: string
+  order?: number
   type: "star_rating" | "text" | "multiple_choice" | "numeric_scale" | "matrix_rating"
   label: string
   required: boolean
@@ -56,6 +57,57 @@ interface SurveyClientProps {
   initialLanguageSwitches?: number
 }
 
+function evaluateSingleCondition(
+  cond: FieldCondition,
+  answers: Record<string, any>,
+  allFields?: SurveyField[],
+  matrixRatedMap?: Record<string, string[]>
+): boolean {
+  const sourceField = allFields?.find(f => f.id === cond.fieldId)
+  const sourceAnswer = answers[cond.fieldId]
+  if (sourceAnswer === undefined || sourceAnswer === null) return false
+
+  if (sourceField?.type === 'matrix_rating' || isMatrixAnswer(sourceAnswer)) {
+    const ratedMap = matrixRatedMap ?? answers._matrixRated
+    let numericVal: number | null = null
+
+    if (cond.subOption && cond.subOption !== MATRIX_AVG_TARGET) {
+      const explicitRated =
+        ratedMap && typeof ratedMap === 'object'
+          ? (ratedMap as Record<string, unknown>)[cond.fieldId]
+          : undefined
+      if (Array.isArray(explicitRated) && !explicitRated.includes(cond.subOption)) {
+        return false
+      }
+      const rawVal = (sourceAnswer as Record<string, unknown>)[cond.subOption]
+      if (typeof rawVal === 'number' && Number.isFinite(rawVal)) {
+        numericVal = rawVal
+      }
+    } else if (sourceField) {
+      const avg = computeMatrixAverageRaw(sourceField, sourceAnswer, ratedMap)
+      numericVal = avg ? avg.averageRaw : null
+    }
+
+    if (numericVal === null) return false
+    if (cond.operator === 'lte') return numericVal <= Number(cond.value)
+    if (cond.operator === 'gte') return numericVal >= Number(cond.value)
+    return false
+  }
+
+  switch (cond.operator) {
+    case 'equals':
+      return sourceAnswer === cond.value
+    case 'not_equals':
+      return sourceAnswer !== cond.value
+    case 'lte':
+      return typeof sourceAnswer === 'number' && sourceAnswer <= (cond.value as number)
+    case 'gte':
+      return typeof sourceAnswer === 'number' && sourceAnswer >= (cond.value as number)
+    default:
+      return true
+  }
+}
+
 function isFieldVisible(
   field: SurveyField,
   answers: Record<string, any>,
@@ -65,51 +117,31 @@ function isFieldVisible(
   const conditions = normalizeDependsOn(field.dependsOn)
   if (conditions.length === 0) return true
 
-  return conditions.every(cond => {
-    const sourceField = allFields?.find(f => f.id === cond.fieldId)
-    const sourceAnswer = answers[cond.fieldId]
-    if (sourceAnswer === undefined || sourceAnswer === null) return false
+  // Multiple `equals` conditions on the same source field/sub-option act as OR alternatives,
+  // while conditions across different fields/sub-options or non-equals operators combine with AND.
+  const equalsGroups = new Map<string, FieldCondition[]>()
+  const andConditions: FieldCondition[] = []
 
-    if (sourceField?.type === 'matrix_rating' || isMatrixAnswer(sourceAnswer)) {
-      const ratedMap = matrixRatedMap ?? answers._matrixRated
-      let numericVal: number | null = null
+  for (const cond of conditions) {
+    if (cond.operator === 'equals') {
+      const groupKey = `${cond.fieldId}::${cond.subOption ?? ''}`
+      const group = equalsGroups.get(groupKey)
+      if (group) group.push(cond)
+      else equalsGroups.set(groupKey, [cond])
+    } else {
+      andConditions.push(cond)
+    }
+  }
 
-      if (cond.subOption && cond.subOption !== MATRIX_AVG_TARGET) {
-        const explicitRated =
-          ratedMap && typeof ratedMap === 'object'
-            ? (ratedMap as Record<string, unknown>)[cond.fieldId]
-            : undefined
-        if (Array.isArray(explicitRated) && !explicitRated.includes(cond.subOption)) {
-          return false
-        }
-        const rawVal = (sourceAnswer as Record<string, unknown>)[cond.subOption]
-        if (typeof rawVal === 'number' && Number.isFinite(rawVal)) {
-          numericVal = rawVal
-        }
-      } else if (sourceField) {
-        const avg = computeMatrixAverageRaw(sourceField, sourceAnswer, ratedMap)
-        numericVal = avg ? avg.averageRaw : null
-      }
-
-      if (numericVal === null) return false
-      if (cond.operator === 'lte') return numericVal <= Number(cond.value)
-      if (cond.operator === 'gte') return numericVal >= Number(cond.value)
+  for (const group of equalsGroups.values()) {
+    if (!group.some(cond => evaluateSingleCondition(cond, answers, allFields, matrixRatedMap))) {
       return false
     }
+  }
 
-    switch (cond.operator) {
-      case 'equals':
-        return sourceAnswer === cond.value
-      case 'not_equals':
-        return sourceAnswer !== cond.value
-      case 'lte':
-        return typeof sourceAnswer === 'number' && sourceAnswer <= (cond.value as number)
-      case 'gte':
-        return typeof sourceAnswer === 'number' && sourceAnswer >= (cond.value as number)
-      default:
-        return true
-    }
-  })
+  return andConditions.every(cond =>
+    evaluateSingleCondition(cond, answers, allFields, matrixRatedMap)
+  )
 }
 
 export function SurveyClient({ session, plateNumber, form, facilitySettings, isPublicMode, initialLanguageSwitches }: SurveyClientProps) {
@@ -130,12 +162,10 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
   const closingQuestionShownRef = React.useRef<{ source: 'ai' | 'static'; label?: string; type?: string; options?: string[] } | null>(null)
   const trackedQrRef = React.useRef(false)
   
-  // Parse fields
+  // Parse and sort fields by explicit order
   const fields = React.useMemo(() => {
-    let parsed: SurveyField[] = []
-    if (Array.isArray(form.fields)) {
-      parsed = form.fields as SurveyField[]
-    }
+    const parsed = Array.isArray(form.fields) ? ([...form.fields] as SurveyField[]) : []
+    parsed.sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
     if (session.visit_stage) {
       return parsed.filter(f => !f.visit_stage || f.visit_stage === session.visit_stage)
     }
@@ -157,6 +187,7 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
   const [matrixRated, setMatrixRated] = React.useState<Record<string, string[]>>({})
   const matrixRatedRef = React.useRef<Record<string, string[]>>({})
   const [submitting, setSubmitting] = React.useState(false)
+  const [submitError, setSubmitError] = React.useState<string | null>(null)
   const [showQr, setShowQr] = React.useState(false)
   const [announcement, setAnnouncement] = React.useState<{
     slug: string
@@ -537,6 +568,8 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
     autoAdvance = true,
     nextMatrixRated: Record<string, string[]> = matrixRated
   ) => {
+    if (!currentField) return
+    setSubmitError(null)
     recordTimeForCurrentQuestion()
     setAnswers(prev => ({ ...prev, [currentField.id]: val }))
 
@@ -604,7 +637,7 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
       const isLastVisible = currentFieldIdx >= nextVisibleFields.length - 1
 
       if (!isLastVisible) {
-        const nextIdx = currentFieldIdx + 1
+        const nextIdx = Math.min(currentFieldIdx + 1, nextVisibleFields.length - 1)
         syncDraftsForField(nextVisibleFields[nextIdx], updatedAnswers, nextMatrixRated)
         setCurrentFieldIdx(nextIdx)
       } else {
@@ -618,25 +651,40 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
   }
 
   const handleSkip = () => {
-    if (submitting) return
+    if (submitting || !currentField) return
+    setSubmitError(null)
     recordTimeForCurrentQuestion()
 
     let nextAnswers = answers
+    if (answers[currentField.id] !== undefined) {
+      const cleaned = { ...answers }
+      delete cleaned[currentField.id]
+      nextAnswers = cleaned
+      setAnswers(cleaned)
+    }
+
     let nextRated = matrixRated
-    if (currentField?.type === "matrix_rating") {
-      if (answers[currentField.id] !== undefined) {
-        const cleaned = { ...answers }
-        delete cleaned[currentField.id]
-        nextAnswers = cleaned
-        setAnswers(cleaned)
-      }
-      if (matrixRated[currentField.id]) {
-        const cleanedRated = { ...matrixRated }
-        delete cleanedRated[currentField.id]
-        nextRated = cleanedRated
-        matrixRatedRef.current = cleanedRated
-        setMatrixRated(cleanedRated)
-      }
+    if (currentField.type === "matrix_rating" && matrixRated[currentField.id]) {
+      const cleanedRated = { ...matrixRated }
+      delete cleanedRated[currentField.id]
+      nextRated = cleanedRated
+      matrixRatedRef.current = cleanedRated
+      setMatrixRated(cleanedRated)
+    }
+
+    if (currentField.type === "text") {
+      setTextScores(prev => {
+        if (prev[currentField.id] === undefined) return prev
+        const next = { ...prev }
+        delete next[currentField.id]
+        return next
+      })
+      setPendingTextFields(prev => {
+        if (!prev.has(currentField.id)) return prev
+        const next = new Set(prev)
+        next.delete(currentField.id)
+        return next
+      })
     }
 
     const nextVisibleFields = combinedFields.filter(f =>
@@ -645,7 +693,7 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
     const isLastVisible = currentFieldIdx >= nextVisibleFields.length - 1
 
     if (!isLastVisible) {
-      const nextIdx = currentFieldIdx + 1
+      const nextIdx = Math.min(currentFieldIdx + 1, nextVisibleFields.length - 1)
       syncDraftsForField(nextVisibleFields[nextIdx], nextAnswers, nextRated)
       setCurrentFieldIdx(nextIdx)
     } else {
@@ -694,6 +742,7 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
 
   const handleBack = () => {
     if (currentFieldIdx > 0) {
+      setSubmitError(null)
       recordTimeForCurrentQuestion()
       backButtonCountRef.current += 1
       const prevIdx = currentFieldIdx - 1
@@ -710,28 +759,60 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
   ) => {
     if (isSubmittingSurvey.current || isAcceptingConsent.current || isRefusingConsent.current) return
     isSubmittingSurvey.current = true
+    setSubmitError(null)
     setSubmitting(true)
 
     recordTimeForCurrentQuestion()
 
-    const isPending = pendingTextFields.size > 0
+    // Converge visibility against final answers and strip stale answers left behind
+    // on downstream questions that became hidden when the customer went Back and edited.
+    const cleanedAnswers: Record<string, any> = { ...finalAnswers }
+    const cleanedRated: Record<string, string[]> = { ...finalMatrixRated }
+    const cleanedTextScores: Record<string, number> = { ...textScores }
+    let finalVisibleFields: SurveyField[] = []
+    let changed = true
+    while (changed) {
+      changed = false
+      finalVisibleFields = combinedFields.filter(f =>
+        isFieldVisible(f, cleanedAnswers, combinedFields, cleanedRated)
+      )
+      const visIds = new Set(finalVisibleFields.map(f => f.id))
+      for (const f of combinedFields) {
+        if (!visIds.has(f.id)) {
+          if (cleanedAnswers[f.id] !== undefined) {
+            delete cleanedAnswers[f.id]
+            changed = true
+          }
+          if (cleanedRated[f.id] !== undefined) {
+            delete cleanedRated[f.id]
+            changed = true
+          }
+          if (cleanedTextScores[f.id] !== undefined) {
+            delete cleanedTextScores[f.id]
+            changed = true
+          }
+        }
+      }
+    }
+
+    const isPending = [...pendingTextFields].some(fid => finalVisibleFields.some(f => f.id === fid))
     if (isPending) {
       setWasPendingOnSubmit(true)
     }
 
     const allFieldIds = combinedFields.map(f => f.id)
-    const visibleFieldIds = visibleFields.map(f => f.id)
+    const visibleFieldIds = finalVisibleFields.map(f => f.id)
     const branchedAwayFieldIds = allFieldIds.filter(id => !visibleFieldIds.includes(id))
 
-    const skippedList = visibleFields.filter(f => finalAnswers[f.id] === undefined || finalAnswers[f.id] === null)
+    const skippedList = finalVisibleFields.filter(f => cleanedAnswers[f.id] === undefined || cleanedAnswers[f.id] === null)
     const skippedByTypes: Record<string, number> = {}
     skippedList.forEach(f => {
       skippedByTypes[f.type] = (skippedByTypes[f.type] || 0) + 1
     })
 
     const payloadAnswers = {
-      ...finalAnswers,
-      ...(Object.keys(finalMatrixRated).length > 0 ? { _matrixRated: finalMatrixRated } : {}),
+      ...cleanedAnswers,
+      ...(Object.keys(cleanedRated).length > 0 ? { _matrixRated: cleanedRated } : {}),
       _skippedSummary: {
         count: skippedList.length,
         byType: skippedByTypes,
@@ -760,7 +841,7 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
           sessionId: session.id,
           action: "completed",
           answers: payloadAnswers,
-          textScores: textScores,
+          textScores: cleanedTextScores,
           isPendingScoring: isPending,
           deviceInfo: typeof window !== "undefined" ? window.navigator.userAgent : "kiosk_tablet",
           interaction_metadata: interactionMetadata,
@@ -779,6 +860,7 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
       setStep("completed")
     } catch (err) {
       console.error(err)
+      setSubmitError(t("errorSubmit"))
     } finally {
       setSubmitting(false)
       isSubmittingSurvey.current = false
@@ -1326,6 +1408,12 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
                   </div>
                 )}
               </div>
+
+              {submitError && (
+                <p className="text-xs font-medium text-rose-600 dark:text-rose-400 text-center">
+                  {submitError}
+                </p>
+              )}
 
               {/* Action Buttons: Left = Skip (light/subtle), Right = Next */}
               <div className="flex items-center justify-between w-full pt-4 border-t border-slate-100 dark:border-slate-800 mt-2" dir="ltr">

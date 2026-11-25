@@ -352,7 +352,13 @@ export function PublicFeedbackClient({
                         className="w-full bg-white border border-slate-300 text-slate-800 rounded-xl text-base focus:ring-indigo-500 font-semibold pr-3 pl-3"
                         style={{ height: '48px', minHeight: '48px' }}
                       >
-                        <SelectValue placeholder={isArabic ? "الإمارة" : "Emirate"} />
+                        <SelectValue placeholder={isArabic ? "الإمارة" : "Emirate"}>
+                          {(val: string | null) => {
+                            if (!val) return isArabic ? "الإمارة" : "Emirate"
+                            const match = uniqueEmirates.find((e) => e.emirate === val)
+                            return match ? (isArabic ? match.emirate_ar : match.emirate) : val
+                          }}
+                        </SelectValue>
                       </SelectTrigger>
                       <SelectContent className="bg-white border-slate-200 text-slate-800 rounded-xl max-h-60 overflow-y-auto">
                         {uniqueEmirates.map((item) => (
@@ -598,6 +604,7 @@ export function PublicFeedbackClient({
         <div className="flex-1 flex flex-col">
           <SurveyClient
             session={session}
+            plateNumber={plateNumber || null}
             form={form}
             facilitySettings={facilitySettings}
             isPublicMode={true}

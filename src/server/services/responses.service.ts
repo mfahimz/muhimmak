@@ -171,7 +171,10 @@ export async function fetchLiveResponsesData(options?: {
   const { data: rawResponses, error: rErr } = await responsesQuery;
   if (rErr) throw rErr;
 
-  const { data: rawForms, error: fErr } = await admin.from('forms').select('*');
+  const { data: rawForms, error: fErr } = await admin
+    .from('forms')
+    .select('*')
+    .order('updated_at', { ascending: false });
   if (fErr) throw fErr;
 
   const sessionMap = new Map((rawSessions || []).map((s) => [s.id, s]));
@@ -180,7 +183,7 @@ export async function fetchLiveResponsesData(options?: {
   // Master questions catalog
   const masterQuestions = new Map<string, QuestionMeta>();
   (rawForms || []).forEach((form) => {
-    (form.fields || []).forEach((field: FormField, idx: number) => {
+    (form.fields || []).forEach((field: FormField & { order?: number }, idx: number) => {
       if (!masterQuestions.has(field.id)) {
         masterQuestions.set(field.id, {
           id: field.id,
@@ -193,7 +196,7 @@ export async function fetchLiveResponsesData(options?: {
           weight: typeof field.weight === 'number' ? field.weight : 0,
           roleTag: field.roleTag || field.domain || 'general',
           visitStage: field.visit_stage || 'general',
-          order: idx + 1,
+          order: typeof field.order === 'number' ? field.order : idx + 1,
         });
       }
     });

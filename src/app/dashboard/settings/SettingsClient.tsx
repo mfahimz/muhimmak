@@ -665,7 +665,13 @@ export function SettingsClient({
                   </Label>
                   <Select value={defaultFormId || "none"} onValueChange={(val) => setDefaultFormId(val === "none" ? null : val)}>
                     <SelectTrigger id="default-form" className="h-10 border-slate-200 focus:ring-indigo-500 dark:border-slate-800 text-slate-900 dark:text-slate-100 w-full max-w-[300px]">
-                      <SelectValue placeholder={t("defaultFormNone")} />
+                      <SelectValue placeholder={t("defaultFormNone")}>
+                        {(val: string | null) =>
+                          !val || val === "none"
+                            ? t("defaultFormNone")
+                            : (activeForms.find((f) => f.id === val)?.name ?? val)
+                        }
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="none">{t("defaultFormNone")}</SelectItem>

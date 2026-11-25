@@ -57,7 +57,6 @@ export function NewSessionClient({ activeForms, locationId, defaultFormId }: New
       toast.error(t("errorSelectForm"))
       return
     }
-    loading
     setLoading(true)
 
     try {
@@ -104,7 +103,11 @@ export function NewSessionClient({ activeForms, locationId, defaultFormId }: New
             ) : (
               <Select value={selectedFormId} onValueChange={(val) => setSelectedFormId(val || "")}>
                 <SelectTrigger className="h-11 border-slate-200 focus:ring-indigo-500 dark:border-slate-800 text-slate-900 dark:text-slate-100">
-                  <SelectValue placeholder={t("formPlaceholder")} />
+                  <SelectValue placeholder={t("formPlaceholder")}>
+                    {(val: string | null) =>
+                      val ? (activeForms.find((f) => f.id === val)?.name ?? val) : t("formPlaceholder")
+                    }
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {activeForms.map((form) => (

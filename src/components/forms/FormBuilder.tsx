@@ -180,13 +180,17 @@ export function FormBuilder({
     fields: { id: string; ar: { label: string; options: string[] } }[]
   } | null>(null)
 
-  // Stage field categorizations
+  // Stage field categorizations (sorted by order)
   const dropOffFields = React.useMemo(() => {
-    return fields.filter(f => !f.visit_stage || f.visit_stage === 'drop_off')
+    return fields
+      .filter(f => !f.visit_stage || f.visit_stage === 'drop_off')
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
   }, [fields])
 
   const pickUpFields = React.useMemo(() => {
-    return fields.filter(f => f.visit_stage === 'pick_up')
+    return fields
+      .filter(f => f.visit_stage === 'pick_up')
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
   }, [fields])
 
   const currentStageFields = React.useMemo(() => {
@@ -224,7 +228,7 @@ export function FormBuilder({
 
   const pickUpTotalWeight = React.useMemo(() => {
     return pickUpScoreable.reduce((sum, f) => sum + (f.weight || 0), 0)
-  }, [pickUpFields])
+  }, [pickUpScoreable])
 
   const activeScoreableFields = React.useMemo(() => {
     if (!isVisitJourney) return scoreableFields
@@ -272,9 +276,10 @@ export function FormBuilder({
 
   // Add a new question field
   const handleAddQuestion = () => {
+    const maxOrder = fields.reduce((max, f) => Math.max(max, f.order || 0), 0)
     const newField: BuilderField = {
       id: generateUUID(),
-      order: fields.length + 1,
+      order: maxOrder + 1,
       type: "text",
       label: "",
       required: true,
@@ -357,22 +362,22 @@ export function FormBuilder({
     })
   }
 
-  // Move a question field up or down within current list
+  // Move a question field up or down within current list (updates array order and sequential order)
   const handleMoveField = (index: number, direction: "up" | "down") => {
-    const list = isVisitJourney ? currentStageFields : fields
+    const list = [...(isVisitJourney ? currentStageFields : fields)]
     if (direction === "up" && index === 0) return
     if (direction === "down" && index === list.length - 1) return
 
     const targetIndex = direction === "up" ? index - 1 : index + 1
-    const currentItem = list[index]
-    const targetItem = list[targetIndex]
+    ;[list[index], list[targetIndex]] = [list[targetIndex], list[index]]
 
-    setFields(prev => {
-      return prev.map(f => {
-        if (f.id === currentItem.id) return { ...f, order: targetItem.order }
-        if (f.id === targetItem.id) return { ...f, order: currentItem.order }
-        return f
-      })
+    setFields(() => {
+      const combined = isVisitJourney
+        ? stageTab === "drop_off"
+          ? [...list, ...pickUpFields]
+          : [...dropOffFields, ...list]
+        : list
+      return combined.map((f, idx) => ({ ...f, order: idx + 1 }))
     })
   }
 
@@ -923,9 +928,14 @@ export function FormBuilder({
       }
     }
 
-    const cleanedFields = fields.map((f) => {
+    const orderedFields = isVisitJourney
+      ? [...dropOffFields, ...pickUpFields]
+      : [...fields].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+
+    const cleanedFields = orderedFields.map((f, idx) => {
       const next = {
         ...f,
+        order: idx + 1,
         label: f.label.trim(),
         options: f.options.map(opt => opt.trim()),
       }

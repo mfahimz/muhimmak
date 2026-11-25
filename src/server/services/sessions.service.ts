@@ -331,42 +331,16 @@ export async function createPublicSession(request: Request): Promise<NextRespons
       );
     }
 
-    // 6-hour duplicate check: Check both hashed key and legacy plaintext key in cookies
-    const cookieHeader = request.headers.get('cookie') || '';
-    const cookieKeyHashed = `muhimmak_submitted_${encodeURIComponent(hashedPlate)}`;
-    const cookieKeyLegacy = `muhimmak_submitted_${encodeURIComponent(cleanPlate)}`;
-    if (cookieHeader.includes(`${cookieKeyHashed}=true`) || cookieHeader.includes(`${cookieKeyLegacy}=true`)) {
-      return NextResponse.json(
-        { duplicate: true, message: 'Feedback already submitted for this plate number in the last 6 hours.' },
-        { status: 409 }
-      );
-    }
-
-    const sixHoursAgo = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
-    const { data: existingLogs } = await admin
-      .from('public_submission_log')
-      .select('id')
-      .or(`plate_number_hash.eq.${hashedPlate},plate_number.eq.${cleanPlate}`)
-      .gte('submitted_at', sixHoursAgo)
-      .limit(1);
-
-    if (existingLogs && existingLogs.length > 0) {
-      return NextResponse.json(
-        { duplicate: true, message: 'Feedback already submitted for this plate number in the last 6 hours.' },
-        { status: 409 }
-      );
-    }
-
-    // Check if target form has is_visit_journey enabled
+    // Check target form status and Visit Journey mode first
     const { data: form, error: formErr } = await admin
       .from('forms')
-      .select('id, is_visit_journey')
+      .select('id, is_visit_journey, status')
       .eq('id', settings.default_form_id)
       .single();
 
-    if (formErr || !form) {
+    if (formErr || !form || form.status !== 'active') {
       return NextResponse.json(
-        { error: 'Form not found.' },
+        { error: 'Form not found or inactive.' },
         { status: 400 }
       );
     }
@@ -382,24 +356,75 @@ export async function createPublicSession(request: Request): Promise<NextRespons
         );
       }
       finalVisitStage = visitStage;
+    }
 
-      if (finalVisitStage === 'pick_up') {
-        const linkWindowDays = settings.visit_link_window_days ?? 5;
-        const windowStartDate = new Date(Date.now() - linkWindowDays * 24 * 60 * 60 * 1000).toISOString();
+    // 6-hour duplicate check: scoped per visit_stage for Visit Journey forms so same-day
+    // drop-off + pick-up both work, while duplicate submissions for the same stage are blocked.
+    const cookieHeader = request.headers.get('cookie') || '';
+    const cookieKeyHashed = finalVisitStage
+      ? `muhimmak_submitted_${encodeURIComponent(hashedPlate)}_${finalVisitStage}`
+      : `muhimmak_submitted_${encodeURIComponent(hashedPlate)}`;
+    const cookieKeyLegacy = `muhimmak_submitted_${encodeURIComponent(cleanPlate)}`;
 
-        const { data: matchingDropOff } = await admin
-          .from('sessions')
-          .select('id')
-          .eq('plate_number_hash', hashedPlate)
-          .eq('visit_stage', 'drop_off')
-          .is('linked_session_id', null)
-          .gte('created_at', windowStartDate)
-          .order('created_at', { ascending: false })
-          .limit(1);
+    if (
+      cookieHeader.includes(`${cookieKeyHashed}=true`) ||
+      (!finalVisitStage && cookieHeader.includes(`${cookieKeyLegacy}=true`))
+    ) {
+      return NextResponse.json(
+        { duplicate: true, message: 'Feedback already submitted for this plate number in the last 6 hours.' },
+        { status: 409 }
+      );
+    }
 
-        if (matchingDropOff && matchingDropOff.length > 0) {
-          linkedSessionId = matchingDropOff[0].id;
-        }
+    const sixHoursAgo = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
+    if (form.is_visit_journey && finalVisitStage) {
+      const { data: recentStageSessions } = await admin
+        .from('sessions')
+        .select('id')
+        .eq('plate_number_hash', hashedPlate)
+        .eq('channel', 'public_qr')
+        .eq('visit_stage', finalVisitStage)
+        .gte('created_at', sixHoursAgo)
+        .limit(1);
+
+      if (recentStageSessions && recentStageSessions.length > 0) {
+        return NextResponse.json(
+          { duplicate: true, message: 'Feedback already submitted for this visit stage in the last 6 hours.' },
+          { status: 409 }
+        );
+      }
+    } else {
+      const { data: existingLogs } = await admin
+        .from('public_submission_log')
+        .select('id')
+        .or(`plate_number_hash.eq.${hashedPlate},plate_number.eq.${cleanPlate}`)
+        .gte('submitted_at', sixHoursAgo)
+        .limit(1);
+
+      if (existingLogs && existingLogs.length > 0) {
+        return NextResponse.json(
+          { duplicate: true, message: 'Feedback already submitted for this plate number in the last 6 hours.' },
+          { status: 409 }
+        );
+      }
+    }
+
+    if (form.is_visit_journey && finalVisitStage === 'pick_up') {
+      const linkWindowDays = settings.visit_link_window_days ?? 5;
+      const windowStartDate = new Date(Date.now() - linkWindowDays * 24 * 60 * 60 * 1000).toISOString();
+
+      const { data: matchingDropOff } = await admin
+        .from('sessions')
+        .select('id')
+        .eq('plate_number_hash', hashedPlate)
+        .eq('visit_stage', 'drop_off')
+        .is('linked_session_id', null)
+        .gte('created_at', windowStartDate)
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (matchingDropOff && matchingDropOff.length > 0) {
+        linkedSessionId = matchingDropOff[0].id;
       }
     }
 

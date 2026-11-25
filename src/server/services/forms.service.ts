@@ -13,7 +13,7 @@ const FACILITY_ID = '00000000-0000-0000-0000-000000000000';
 // Private helper — auth + role check (shared by all three forms routes)
 // ---------------------------------------------------------------------------
 async function authorizeFormAdmin(): Promise<
-  { authorized: true; admin: ReturnType<typeof createAdminClient> } |
+  { authorized: true; admin: ReturnType<typeof createAdminClient>; userId: string } |
   { authorized: false; response: NextResponse }
 > {
   const supabase = await createClient();
@@ -35,7 +35,7 @@ async function authorizeFormAdmin(): Promise<
     return { authorized: false, response: NextResponse.json({ error: 'Forbidden' }, { status: 403 }) };
   }
 
-  return { authorized: true, admin };
+  return { authorized: true, admin, userId: user.id };
 }
 
 // ---------------------------------------------------------------------------
@@ -762,5 +762,136 @@ Constraints:
   } catch (err: any) {
     console.error('generateForm error:', err);
     return NextResponse.json({ error: err.message || err }, { status: 500 });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// saveFormVersion — updates in-place OR closes version + inserts new active
+// version and carries forward facility_settings.default_form_id automatically
+// ---------------------------------------------------------------------------
+export async function saveFormVersion(request: Request): Promise<NextResponse> {
+  try {
+    const auth = await authorizeFormAdmin();
+    if (!auth.authorized) return auth.response;
+    const { admin, userId } = auth;
+
+    const body = await request.json();
+    const {
+      formId,
+      name,
+      description,
+      fields,
+      nameAr,
+      descriptionAr,
+      isVisitJourney,
+    } = body;
+
+    if (!formId || typeof formId !== 'string') {
+      return NextResponse.json({ error: 'Missing formId' }, { status: 400 });
+    }
+    if (!name || typeof name !== 'string' || !name.trim()) {
+      return NextResponse.json({ error: 'Form name is required' }, { status: 400 });
+    }
+    if (!Array.isArray(fields) || fields.length === 0) {
+      return NextResponse.json({ error: 'Form fields must be a non-empty array' }, { status: 400 });
+    }
+
+    const { data: existingForm, error: fetchErr } = await admin
+      .from('forms')
+      .select('id, parent_id, type, status')
+      .eq('id', formId)
+      .single();
+
+    if (fetchErr || !existingForm) {
+      return NextResponse.json({ error: 'Form not found' }, { status: 404 });
+    }
+
+    const fieldsWithDomains = await inferMissingQuestionDomains(fields);
+    const now = new Date().toISOString();
+
+    const { count, error: countErr } = await admin
+      .from('responses')
+      .select('id', { count: 'exact', head: true })
+      .eq('form_id', formId);
+
+    if (countErr) throw countErr;
+
+    const responsesExist = count !== null && count > 0;
+
+    if (responsesExist) {
+      const { error: closeErr } = await admin
+        .from('forms')
+        .update({ status: 'closed', updated_at: now })
+        .eq('id', formId);
+
+      if (closeErr) throw closeErr;
+
+      const { data: insertedForm, error: insertErr } = await admin
+        .from('forms')
+        .insert({
+          name: name.trim(),
+          description: typeof description === 'string' ? description.trim() : '',
+          fields: fieldsWithDomains,
+          name_ar: typeof nameAr === 'string' ? nameAr.trim() : '',
+          description_ar: typeof descriptionAr === 'string' ? descriptionAr.trim() : '',
+          is_visit_journey: Boolean(isVisitJourney),
+          status: 'active',
+          created_by: userId,
+          parent_id: existingForm.parent_id || existingForm.id,
+          type: existingForm.type || 'smart',
+        })
+        .select('id')
+        .single();
+
+      if (insertErr || !insertedForm) throw insertErr || new Error('Failed to insert new form version');
+
+      // Carry forward default_form_id so public QR scanning keeps pointing to the active version
+      const { data: settings } = await admin
+        .from('facility_settings')
+        .select('default_form_id')
+        .eq('id', FACILITY_ID)
+        .single();
+
+      let updatedDefaultFormId = false;
+      if (settings?.default_form_id === formId) {
+        const { error: defErr } = await admin
+          .from('facility_settings')
+          .update({ default_form_id: insertedForm.id, updated_at: now })
+          .eq('id', FACILITY_ID);
+        if (defErr) throw defErr;
+        updatedDefaultFormId = true;
+      }
+
+      return NextResponse.json({
+        versionCreated: true,
+        formId: insertedForm.id,
+        updatedDefaultFormId,
+      });
+    }
+
+    const { error: updateErr } = await admin
+      .from('forms')
+      .update({
+        name: name.trim(),
+        description: typeof description === 'string' ? description.trim() : '',
+        fields: fieldsWithDomains,
+        name_ar: typeof nameAr === 'string' ? nameAr.trim() : '',
+        description_ar: typeof descriptionAr === 'string' ? descriptionAr.trim() : '',
+        is_visit_journey: Boolean(isVisitJourney),
+        updated_at: now,
+      })
+      .eq('id', formId);
+
+    if (updateErr) throw updateErr;
+
+    return NextResponse.json({
+      versionCreated: false,
+      formId,
+      updatedDefaultFormId: false,
+    });
+  } catch (err: unknown) {
+    console.error('saveFormVersion error:', err);
+    const message = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

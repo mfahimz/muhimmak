@@ -24,7 +24,7 @@ export interface EditFormClientProps {
   }
 }
 
-export function EditFormClient({ userId, form }: EditFormClientProps) {
+export function EditFormClient({ form }: EditFormClientProps) {
   const router = useRouter()
   const t = useTranslations("Forms")
   const [isSaving, setIsSaving] = React.useState(false)
@@ -71,68 +71,30 @@ export function EditFormClient({ userId, form }: EditFormClientProps) {
     isVisitJourney: boolean
   ) => {
     setIsSaving(true)
-    const supabase = createClient()
 
     try {
-      const domainResponse = await fetch("/api/v1/forms/infer-domains", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fields }) })
-      if (!domainResponse.ok) throw new Error("Could not infer question domains")
-      const { fields: fieldsWithDomains } = await domainResponse.json()
-      // Step 3 Versioning Check: Check again right before saving to be absolutely consistent
-      const { count, error: countErr } = await supabase
-        .from("responses")
-        .select("id", { count: "exact", head: true })
-        .eq("form_id", form.id)
+      const response = await fetch("/api/v1/forms/version", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          formId: form.id,
+          name,
+          description,
+          fields,
+          nameAr,
+          descriptionAr,
+          isVisitJourney,
+        }),
+      })
 
-      if (countErr) throw countErr
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        throw new Error(data.error || "Could not save form version")
+      }
 
-      const responsesExist = count !== null && count > 0
-
-      if (responsesExist) {
-        // --- CREATE NEW VERSION FLOW ---
-        // 1. Close current form version
-        const { error: closeErr } = await supabase
-          .from("forms")
-          .update({ status: "closed" })
-          .eq("id", form.id)
-
-        if (closeErr) throw closeErr
-
-        // 2. Insert new version
-        const { error: insertErr } = await supabase
-          .from("forms")
-          .insert({
-            name,
-            description,
-            fields: fieldsWithDomains,
-            name_ar: nameAr,
-            description_ar: descriptionAr,
-            is_visit_journey: isVisitJourney,
-            status: "active", // New active version
-            created_by: userId,
-            parent_id: form.parent_id || form.id, // Group under the root parent
-            type: form.type || "smart",
-          })
-
-        if (insertErr) throw insertErr
-
+      if (data.versionCreated) {
         toast.success(t("versionCreated"))
       } else {
-        // --- IN-PLACE UPDATE FLOW ---
-        const { error: updateErr } = await supabase
-          .from("forms")
-          .update({
-            name,
-            description,
-            fields: fieldsWithDomains,
-            name_ar: nameAr,
-            description_ar: descriptionAr,
-            is_visit_journey: isVisitJourney,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", form.id)
-
-        if (updateErr) throw updateErr
-
         toast.success(t("savedSuccess"))
       }
 
