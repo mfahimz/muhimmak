@@ -8,6 +8,7 @@ import { deepseek, DEEPSEEK_MODEL, DEEPSEEK_NO_THINKING } from '@/server/lib/dee
 import {
   computeMatrixAverageRaw,
   formatMatrixAnswerSummary,
+  getMatrixOtherText,
   getMatrixRatedKeys,
   isMatrixAnswer,
   isValidMatrixScore,
@@ -26,6 +27,7 @@ export interface QuestionMeta {
   roleTag: string;
   visitStage: string;
   order: number;
+  allowOther?: boolean;
 }
 
 export interface MatrixOptionStat {
@@ -34,6 +36,15 @@ export interface MatrixOptionStat {
   averageRating: number | null;
   averageNormalizedScore: number | null;
   ratedCount: number;
+}
+
+export interface MatrixOtherEntry {
+  responseId: string;
+  sessionId: string;
+  plateNumber: string | null;
+  submittedAt: string;
+  language: string;
+  text: string;
 }
 
 export interface QuestionSummaryStat {
@@ -49,6 +60,8 @@ export interface QuestionSummaryStat {
   averageNormalizedScore: number | null;
   choiceDistribution: { label: string; count: number; percentage: number }[];
   matrixOptionStats?: MatrixOptionStat[];
+  matrixOtherCount?: number;
+  matrixOtherEntries?: MatrixOtherEntry[];
   textCount: number;
 }
 
@@ -85,6 +98,7 @@ interface FormField {
   roleTag?: string;
   domain?: string;
   visit_stage?: string;
+  allowOther?: boolean;
 }
 
 interface ResponseRow {
@@ -197,6 +211,7 @@ export async function fetchLiveResponsesData(options?: {
           roleTag: field.roleTag || field.domain || 'general',
           visitStage: field.visit_stage || 'general',
           order: typeof field.order === 'number' ? field.order : idx + 1,
+          ...(field.type === 'matrix_rating' ? { allowOther: Boolean(field.allowOther) } : {}),
         });
       }
     });
@@ -331,7 +346,13 @@ export async function fetchLiveResponsesData(options?: {
   const totalResponses = enrichedResponses.length;
   const questionStats: QuestionSummaryStat[] = questionList.map((q) => {
     const rawAnswers = enrichedResponses
-      .map((r) => r.answers[q.id])
+      .map((r) =>
+        r.answers[q.id] !== undefined && r.answers[q.id] !== null && r.answers[q.id] !== ''
+          ? r.answers[q.id]
+          : q.type === 'matrix_rating'
+          ? getMatrixOtherText(q.id, r.answers._matrixOther)
+          : undefined
+      )
       .filter((a) => a !== undefined && a !== null && a !== '');
 
     const totalAnswers = rawAnswers.length;
@@ -400,6 +421,24 @@ export async function fetchLiveResponsesData(options?: {
           })
         : undefined;
 
+    const matrixOtherEntries: MatrixOtherEntry[] | undefined =
+      q.type === 'matrix_rating'
+        ? enrichedResponses.flatMap((r) => {
+            const text = getMatrixOtherText(q.id, r.answers._matrixOther);
+            if (!text) return [];
+            return [
+              {
+                responseId: r.responseId,
+                sessionId: r.sessionId,
+                plateNumber: r.plateNumber,
+                submittedAt: r.submittedAt,
+                language: r.language,
+                text,
+              },
+            ];
+          })
+        : undefined;
+
     const choiceDistribution: { label: string; count: number; percentage: number }[] = [];
     if (q.type === 'multiple_choice') {
       const counts: Record<string, number> = {};
@@ -431,6 +470,12 @@ export async function fetchLiveResponsesData(options?: {
       averageNormalizedScore,
       choiceDistribution,
       matrixOptionStats,
+      ...(q.type === 'matrix_rating'
+        ? {
+            matrixOtherCount: matrixOtherEntries?.length ?? 0,
+            matrixOtherEntries,
+          }
+        : {}),
       textCount: q.type === 'text' ? totalAnswers : 0,
     };
   });
@@ -605,7 +650,7 @@ export async function runAiBatchScoring(): Promise<{
         .map((f: FormField) => {
           const val =
             f.type === 'matrix_rating'
-              ? formatMatrixAnswerSummary(f, resp.answers[f.id], resp.answers._matrixRated, false)
+              ? formatMatrixAnswerSummary(f, resp.answers[f.id], resp.answers._matrixRated, false, resp.answers._matrixOther)
               : resp.answers[f.id];
           return `Q: ${f.label}\nA: ${val}`;
         })
@@ -727,8 +772,9 @@ export async function generateLiveResponsesExcelBuffer(): Promise<Buffer> {
   let rowIdx1 = 2;
   data.questions.forEach((q) => {
     data.responses.forEach((r) => {
+      const otherText = q.type === 'matrix_rating' ? getMatrixOtherText(q.id, r.answers._matrixOther) : null;
       const ans = r.answers[q.id];
-      if (ans !== undefined && ans !== null && ans !== '') {
+      if ((ans !== undefined && ans !== null && ans !== '') || otherText !== null) {
         const normScore = r.perQuestionScores[q.id];
         const formattedDate = r.submittedAt ? r.submittedAt.replace('T', ' ').substring(0, 16) : '';
 
@@ -738,7 +784,8 @@ export async function generateLiveResponsesExcelBuffer(): Promise<Buffer> {
                 { id: q.id, options: q.options, ar: { options: q.optionsAr } },
                 ans,
                 r.answers._matrixRated,
-                false
+                false,
+                r.answers._matrixOther
               )
             : String(ans);
 
@@ -820,7 +867,8 @@ export async function generateLiveResponsesExcelBuffer(): Promise<Buffer> {
 
     data.questions.forEach((q) => {
       const ans = r.answers[q.id];
-      if (ans === undefined || ans === null) {
+      const hasOther = q.type === 'matrix_rating' && getMatrixOtherText(q.id, r.answers._matrixOther) !== null;
+      if ((ans === undefined || ans === null) && !hasOther) {
         rowValues.push('');
       } else if (q.type === 'matrix_rating') {
         rowValues.push(
@@ -828,7 +876,8 @@ export async function generateLiveResponsesExcelBuffer(): Promise<Buffer> {
             { id: q.id, options: q.options, ar: { options: q.optionsAr } },
             ans,
             r.answers._matrixRated,
-            false
+            false,
+            r.answers._matrixOther
           )
         );
       } else {
@@ -891,6 +940,11 @@ export async function generateLiveResponsesExcelBuffer(): Promise<Buffer> {
       distStr = qs.matrixOptionStats
         .map((m) => `${m.labelEn}: ${m.averageRating !== null ? `${m.averageRating}/5` : 'N/A'} (n=${m.ratedCount})`)
         .join(' | ');
+      if (qs.matrixOtherCount && qs.matrixOtherCount > 0) {
+        distStr = distStr
+          ? `${distStr} | Other entries: ${qs.matrixOtherCount}`
+          : `Other entries: ${qs.matrixOtherCount}`;
+      }
     } else if (qs.type === 'text') {
       distStr = `${qs.textCount} text comments received`;
     }

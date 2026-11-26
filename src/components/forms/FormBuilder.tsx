@@ -30,6 +30,7 @@ export interface BuilderField {
   ar?: { label: string; options: string[] }
   visit_stage?: 'drop_off' | 'pick_up'
   domain?: QuestionDomain
+  allowOther?: boolean
 }
 
 export interface FormBuilderProps {
@@ -139,6 +140,7 @@ export function FormBuilder({
           dependsOn: null,
           weight: f.weight ?? 0,
           optionScores: isMultipleChoice ? new Array(opts.length).fill(0) : undefined,
+          ...(f.type === "matrix_rating" ? { allowOther: f.allowOther ?? true } : {}),
         }
       })
 
@@ -317,9 +319,11 @@ export function FormBuilder({
             if (updates.type === "text" || updates.type === "star_rating" || updates.type === "numeric_scale") {
               next.weight = f.weight ?? 0
               delete next.optionScores
+              delete next.allowOther
               next.options = []
             } else if (updates.type === "multiple_choice") {
               next.weight = f.weight ?? 0
+              delete next.allowOther
               if (f.type !== "multiple_choice") {
                 next.options = f.options.length > 0 ? f.options : [`${tAI("optionDefault")} 1`]
                 next.optionScores = new Array(next.options.length).fill(0)
@@ -327,6 +331,7 @@ export function FormBuilder({
             } else if (updates.type === "matrix_rating") {
               next.weight = f.weight ?? 0
               delete next.optionScores
+              next.allowOther = f.type === "matrix_rating" ? (f.allowOther ?? true) : true
               if (f.type !== "matrix_rating") {
                 next.options = f.options.length > 0 ? f.options : [`${tAI("optionDefault")} 1`, `${tAI("optionDefault")} 2`]
               }
@@ -674,6 +679,7 @@ export function FormBuilder({
           weight: 0,
           optionScores: isMultipleChoice ? new Array((q.options || []).length).fill(0) : undefined,
           visit_stage: isVisitJourney ? stageTab : undefined,
+          ...(q.type === "matrix_rating" ? { allowOther: true } : {}),
         }
       })
 
@@ -728,6 +734,7 @@ export function FormBuilder({
         weight: 0,
         optionScores: isMultipleChoice ? new Array((q.options || []).length).fill(0) : undefined,
         visit_stage: isVisitJourney ? stageTab : undefined,
+        ...(q.type === "matrix_rating" ? { allowOther: true } : {}),
       }
 
       setFields([...fields, newField])
@@ -933,11 +940,16 @@ export function FormBuilder({
       : [...fields].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
 
     const cleanedFields = orderedFields.map((f, idx) => {
-      const next = {
+      const next: BuilderField = {
         ...f,
         order: idx + 1,
         label: f.label.trim(),
         options: f.options.map(opt => opt.trim()),
+      }
+      if (f.type === "matrix_rating") {
+        next.allowOther = Boolean(f.allowOther)
+      } else {
+        delete next.allowOther
       }
       if (next.dependsOn) {
         const conds = normalizeDependsOn(next.dependsOn).map(c => ({
@@ -1524,6 +1536,29 @@ export function FormBuilder({
                           <Plus className="size-3 mr-1" />
                           {field.type === "matrix_rating" ? t("addSubOption") : t("addOption")}
                         </Button>
+
+                        {field.type === "matrix_rating" && (
+                          <div className="pt-2.5 mt-1 border-t border-slate-200/70 dark:border-slate-800/80 flex items-center justify-between gap-3">
+                            <div className="space-y-0.5">
+                              <Label
+                                htmlFor={`allow-other-${field.id}`}
+                                className="text-xs font-semibold text-slate-700 dark:text-slate-200 cursor-pointer"
+                              >
+                                {tAI("matrixAllowOtherLabel")}
+                              </Label>
+                              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                                {tAI("matrixAllowOtherHint")}
+                              </p>
+                            </div>
+                            <Switch
+                              id={`allow-other-${field.id}`}
+                              checked={Boolean(field.allowOther)}
+                              onCheckedChange={(checked) =>
+                                handleUpdateField(field.id, { allowOther: checked })
+                              }
+                            />
+                          </div>
+                        )}
                       </div>
                     )}
 

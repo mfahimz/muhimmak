@@ -362,6 +362,7 @@
     "skippedBadge": "Skipped by customer",
     "matrixUnratedBadge": "Not rated",
     "matrixAvgSummary": "Average: {avg} / 5 ({pct}%)",
+    "matrixOtherBadge": "Other",
     "dropOffStage": "Drop-off Stage",
     "pickUpStage": "Pick-up Stage",
     "dropOffPending": "Drop-off feedback not yet submitted",
@@ -403,6 +404,8 @@
     "scoreLabel": "Score:",
     "matrixSubOptionsHint": "Customers score each item from 0 to 5",
     "matrixZeroToFiveBadge": "0–5 score",
+    "matrixAllowOtherLabel": "Include \"Other\" text box",
+    "matrixAllowOtherHint": "Adds an optional box at the bottom so customers can enter anything not listed",
     "savingLabel": "Saving...",
     "textWeightNote": "Text answers are scored by AI based on sentiment and relevance",
     "tabs": {
@@ -478,6 +481,9 @@
     "textPlaceholder": "Type your feedback here...",
     "matrixHint": "Enter a whole number score from 0 to 5 for each item. Leave blank if not applicable.",
     "matrixClearOption": "Clear score",
+    "matrixOtherLabel": "None of these? Enter any other you think of (optional)",
+    "matrixOtherPlaceholder": "Enter any other reason or item...",
+    "matrixClearOther": "Clear text",
     "nextButton": "Next",
     "skipButton": "Skip",
     "backButton": "Back",
@@ -727,6 +733,9 @@
     "ratingOutOf": "{value} / {max}",
     "responseDistribution": "Response Distribution:",
     "matrixSubOptionAverages": "Sub-Option Averages (out of 5):",
+    "matrixOtherPrefix": "Other",
+    "matrixOtherCountBadge": "+ {count} \"Other\"",
+    "matrixOtherResponsesLabel": "Custom \"Other\" entries:",
     "chatRateLimited": "Too many questions in a short time. Please wait a minute and try again."
   },
   "Analysis": {
@@ -838,6 +847,7 @@
       "driverNone": "A negative answer here does not pull down the rest of the visit.",
       "askAbout": "Ask AI about this question",
       "askPrompt": "Explain the result for this question and what could be behind it: {question}",
+      "matrixOtherTitle": "Other entries ({count})",
       "writtenNote": "Written answers are in Comments.",
       "openComments": "Open comments"
     },

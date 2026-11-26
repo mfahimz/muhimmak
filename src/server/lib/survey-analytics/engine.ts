@@ -40,7 +40,7 @@ import {
 } from '@/lib/analytics/types';
 import { buildFindings } from './findings';
 import { isAnswered, isUsableComment } from './text';
-import { computeMatrixAverageRaw, getMatrixRatedKeys, isMatrixAnswer, isValidMatrixScore } from '@/lib/forms/matrix';
+import { computeMatrixAverageRaw, getMatrixOtherText, getMatrixRatedKeys, isMatrixAnswer, isValidMatrixScore } from '@/lib/forms/matrix';
 
 // ---------------------------------------------------------------------------
 // Input contract
@@ -267,6 +267,7 @@ interface Agg {
   raw: number[];
   opts: Map<string, OptAgg>;
   matrixSub: Map<string, MatrixSubAgg>;
+  matrixOther: Array<{ text: string; language: Lang; submittedAt: string }>;
   lang: Record<Lang, { scores: number[]; neg: number }>;
   negRest: number[];
   posRest: number[];
@@ -289,6 +290,7 @@ function emptyAgg(latest: EngineField, order: number): Agg {
     raw: [],
     opts: new Map(),
     matrixSub: new Map(),
+    matrixOther: [],
     lang: { en: { scores: [], neg: 0 }, ar: { scores: [], neg: 0 } },
     negRest: [],
     posRest: [],
@@ -451,7 +453,9 @@ function buildCore(input: EngineInput): CoreResult {
     for (const field of fields) {
       if (!SCOREABLE.has(field.type)) continue;
       const value = answers[field.id];
-      const present = isAnswered(value);
+      const otherText =
+        field.type === 'matrix_rating' ? getMatrixOtherText(field.id, answers._matrixOther) : null;
+      const present = isAnswered(value) || otherText !== null;
       // A visit journey form holds both stages' questions, but a customer only sees their own stage.
       const otherStage =
         (field.visit_stage === 'drop_off' || field.visit_stage === 'pick_up') && stage !== 'general' && field.visit_stage !== stage;
@@ -494,6 +498,9 @@ function buildCore(input: EngineInput): CoreResult {
       }
 
       agg.answered++;
+      if (otherText) {
+        agg.matrixOther.push({ text: otherText, language: lang, submittedAt: at });
+      }
 
       if (field.type === 'text') {
         const text = String(value).trim();
@@ -540,7 +547,7 @@ function buildCore(input: EngineInput): CoreResult {
 
       const norm = normalizeStructured(field, value, answers._matrixRated);
       if (!norm) {
-        agg.answered--;
+        if (!otherText) agg.answered--;
         continue;
       }
 
@@ -773,6 +780,15 @@ function buildCore(input: EngineInput): CoreResult {
         },
         previousAvgScore: null,
         text: isText ? { total: a.textTotal, usable: a.textUsable, classified: a.textClassified } : null,
+        ...(f.type === 'matrix_rating'
+          ? {
+              matrixOtherCount: a.matrixOther.length,
+              matrixOtherEntries: a.matrixOther
+                .slice()
+                .sort((x, y) => y.submittedAt.localeCompare(x.submittedAt))
+                .slice(0, 50),
+            }
+          : {}),
       };
     })
     .sort((x, y) => {

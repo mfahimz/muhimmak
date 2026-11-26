@@ -10,7 +10,7 @@ import { ChevronLeft, AlertTriangle, ArrowRight, RefreshCw, QrCode, ThumbsUp, Lo
 import { QRCodeSVG } from "qrcode.react"
 import { toArabicNumerals } from "@/lib/utils/arabic-numerals"
 import { FieldCondition, MATRIX_AVG_TARGET, normalizeDependsOn } from "@/lib/forms/condition"
-import { computeMatrixAverageRaw, isMatrixAnswer, normalizeMatrixDigitInput } from "@/lib/forms/matrix"
+import { computeMatrixAverageRaw, isMatrixAnswer, MAX_MATRIX_OTHER_LENGTH, normalizeMatrixDigitInput } from "@/lib/forms/matrix"
 import type { QuestionDomain } from "@/lib/forms/domain"
 import { AutoversaAnnouncement } from "@/components/AutoversaAnnouncement"
 import { AnnouncementCard } from "@/components/AnnouncementCard"
@@ -28,6 +28,7 @@ export interface SurveyField {
   ar?: { label: string; options: string[] }
   visit_stage?: 'drop_off' | 'pick_up' | null
   domain?: QuestionDomain
+  allowOther?: boolean
 }
 
 export interface SurveySession {
@@ -186,6 +187,9 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
   const [matrixDraft, setMatrixDraft] = React.useState<Record<string, string>>({})
   const [matrixRated, setMatrixRated] = React.useState<Record<string, string[]>>({})
   const matrixRatedRef = React.useRef<Record<string, string[]>>({})
+  const [matrixOtherDraft, setMatrixOtherDraft] = React.useState("")
+  const [matrixOtherMap, setMatrixOtherMap] = React.useState<Record<string, string>>({})
+  const matrixOtherRef = React.useRef<Record<string, string>>({})
   const [submitting, setSubmitting] = React.useState(false)
   const [submitError, setSubmitError] = React.useState<string | null>(null)
   const [showQr, setShowQr] = React.useState(false)
@@ -259,16 +263,19 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
   const syncDraftsForField = (
     nextField: SurveyField | undefined,
     nextAnswers: Record<string, any>,
-    nextMatrixRated: Record<string, string[]>
+    nextMatrixRated: Record<string, string[]>,
+    nextMatrixOther: Record<string, string> = matrixOtherMap
   ) => {
     if (!nextField) {
       setTextVal("")
       setMatrixDraft({})
+      setMatrixOtherDraft("")
       return
     }
     if (nextField.type === "text") {
       setTextVal(typeof nextAnswers[nextField.id] === "string" ? nextAnswers[nextField.id] : "")
       setMatrixDraft({})
+      setMatrixOtherDraft("")
     } else if (nextField.type === "matrix_rating") {
       setTextVal("")
       const existing = nextAnswers[nextField.id]
@@ -287,9 +294,11 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
         }
       })
       setMatrixDraft(nextDraft)
+      setMatrixOtherDraft(nextField.allowOther ? (nextMatrixOther[nextField.id] ?? "") : "")
     } else {
       setTextVal("")
       setMatrixDraft({})
+      setMatrixOtherDraft("")
     }
   }
 
@@ -566,7 +575,8 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
   const handleAnswer = (
     val: any,
     autoAdvance = true,
-    nextMatrixRated: Record<string, string[]> = matrixRated
+    nextMatrixRated: Record<string, string[]> = matrixRated,
+    nextMatrixOther: Record<string, string> = matrixOtherMap
   ) => {
     if (!currentField) return
     setSubmitError(null)
@@ -619,8 +629,12 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
     // Trigger AI closing question generation if conditions are met
     const isAr = session.language === 'ar'
     if (!isAr && session.visit_stage && aiClosingQuestionStatus === 'idle') {
-      const updatedAnswers = { ...answers, [currentField.id]: val }
-      // Filter out meta keys like _textScores / _matrixRated
+      const updatedAnswers = {
+        ...answers,
+        [currentField.id]: val,
+        ...(Object.keys(nextMatrixOther).length > 0 ? { _matrixOther: nextMatrixOther } : {}),
+      }
+      // Filter out meta keys like _textScores / _matrixRated / _matrixOther
       const answeredKeys = Object.keys(updatedAnswers).filter(k => !k.startsWith('_'))
       const triggerThreshold = Math.ceil(fields.length * 0.5)
 
@@ -638,10 +652,10 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
 
       if (!isLastVisible) {
         const nextIdx = Math.min(currentFieldIdx + 1, nextVisibleFields.length - 1)
-        syncDraftsForField(nextVisibleFields[nextIdx], updatedAnswers, nextMatrixRated)
+        syncDraftsForField(nextVisibleFields[nextIdx], updatedAnswers, nextMatrixRated, nextMatrixOther)
         setCurrentFieldIdx(nextIdx)
       } else {
-        handleSubmitSurvey(updatedAnswers, nextMatrixRated)
+        handleSubmitSurvey(updatedAnswers, nextMatrixRated, nextMatrixOther)
       }
     }
   }
@@ -672,6 +686,15 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
       setMatrixRated(cleanedRated)
     }
 
+    let nextOther = matrixOtherMap
+    if (currentField.type === "matrix_rating" && matrixOtherMap[currentField.id] !== undefined) {
+      const cleanedOther = { ...matrixOtherMap }
+      delete cleanedOther[currentField.id]
+      nextOther = cleanedOther
+      matrixOtherRef.current = cleanedOther
+      setMatrixOtherMap(cleanedOther)
+    }
+
     if (currentField.type === "text") {
       setTextScores(prev => {
         if (prev[currentField.id] === undefined) return prev
@@ -694,10 +717,10 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
 
     if (!isLastVisible) {
       const nextIdx = Math.min(currentFieldIdx + 1, nextVisibleFields.length - 1)
-      syncDraftsForField(nextVisibleFields[nextIdx], nextAnswers, nextRated)
+      syncDraftsForField(nextVisibleFields[nextIdx], nextAnswers, nextRated, nextOther)
       setCurrentFieldIdx(nextIdx)
     } else {
-      handleSubmitSurvey(nextAnswers, nextRated)
+      handleSubmitSurvey(nextAnswers, nextRated, nextOther)
     }
   }
 
@@ -714,7 +737,10 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
       const ratedKeys = currentField.options.filter(
         (opt) => matrixDraft[opt] !== undefined && matrixDraft[opt] !== ""
       )
-      if (ratedKeys.length === 0) {
+      const trimmedOther = currentField.allowOther
+        ? matrixOtherDraft.trim().slice(0, MAX_MATRIX_OTHER_LENGTH)
+        : ""
+      if (ratedKeys.length === 0 && trimmedOther === "") {
         handleSkip()
         return
       }
@@ -729,7 +755,17 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
       }
       matrixRatedRef.current = nextRated
       setMatrixRated(nextRated)
-      handleAnswer(matrixAnswer, true, nextRated)
+
+      const nextOther = { ...matrixOtherMap }
+      if (trimmedOther) {
+        nextOther[currentField.id] = trimmedOther
+      } else {
+        delete nextOther[currentField.id]
+      }
+      matrixOtherRef.current = nextOther
+      setMatrixOtherMap(nextOther)
+
+      handleAnswer(matrixAnswer, true, nextRated, nextOther)
     } else if (currentField) {
       const existingAnswer = answers[currentField.id]
       if (existingAnswer !== undefined && existingAnswer !== null) {
@@ -747,7 +783,7 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
       backButtonCountRef.current += 1
       const prevIdx = currentFieldIdx - 1
       const prevField = visibleFields[prevIdx]
-      syncDraftsForField(prevField, answers, matrixRated)
+      syncDraftsForField(prevField, answers, matrixRated, matrixOtherMap)
       setCurrentFieldIdx(prevIdx)
     }
   }
@@ -755,7 +791,8 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
   // Submit survey successfully
   const handleSubmitSurvey = async (
     finalAnswers: Record<string, any>,
-    finalMatrixRated: Record<string, string[]> = matrixRated
+    finalMatrixRated: Record<string, string[]> = matrixRated,
+    finalMatrixOther: Record<string, string> = matrixOtherMap
   ) => {
     if (isSubmittingSurvey.current || isAcceptingConsent.current || isRefusingConsent.current) return
     isSubmittingSurvey.current = true
@@ -768,6 +805,7 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
     // on downstream questions that became hidden when the customer went Back and edited.
     const cleanedAnswers: Record<string, any> = { ...finalAnswers }
     const cleanedRated: Record<string, string[]> = { ...finalMatrixRated }
+    const cleanedOther: Record<string, string> = { ...finalMatrixOther }
     const cleanedTextScores: Record<string, number> = { ...textScores }
     let finalVisibleFields: SurveyField[] = []
     let changed = true
@@ -785,6 +823,10 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
           }
           if (cleanedRated[f.id] !== undefined) {
             delete cleanedRated[f.id]
+            changed = true
+          }
+          if (cleanedOther[f.id] !== undefined) {
+            delete cleanedOther[f.id]
             changed = true
           }
           if (cleanedTextScores[f.id] !== undefined) {
@@ -813,6 +855,7 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
     const payloadAnswers = {
       ...cleanedAnswers,
       ...(Object.keys(cleanedRated).length > 0 ? { _matrixRated: cleanedRated } : {}),
+      ...(Object.keys(cleanedOther).length > 0 ? { _matrixOther: cleanedOther } : {}),
       _skippedSummary: {
         count: skippedList.length,
         byType: skippedByTypes,
@@ -890,6 +933,7 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
             ? {
                 ...answers,
                 ...(Object.keys(matrixRatedRef.current).length > 0 ? { _matrixRated: matrixRatedRef.current } : {}),
+                ...(Object.keys(matrixOtherRef.current).length > 0 ? { _matrixOther: matrixOtherRef.current } : {}),
               }
             : null,
           deviceInfo: typeof window !== "undefined" ? window.navigator.userAgent : "kiosk_tablet",
@@ -1405,6 +1449,47 @@ export function SurveyClient({ session, plateNumber, form, facilitySettings, isP
                         )
                       })}
                     </div>
+
+                    {currentField.allowOther && (
+                      <div
+                        className={`rounded-xl border px-4 py-3 space-y-2 transition-colors ${
+                          matrixOtherDraft.trim() !== ""
+                            ? "border-indigo-300 bg-indigo-50/40 dark:border-indigo-800 dark:bg-indigo-950/20"
+                            : "border-slate-200 bg-slate-50/50 dark:border-slate-800 dark:bg-slate-900/30"
+                        }`}
+                      >
+                        <label
+                          htmlFor={`matrix-other-${currentField.id}`}
+                          className="block text-sm font-medium text-slate-800 dark:text-slate-100 text-start"
+                        >
+                          {t("matrixOtherLabel")}
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            id={`matrix-other-${currentField.id}`}
+                            type="text"
+                            maxLength={MAX_MATRIX_OTHER_LENGTH}
+                            dir="auto"
+                            disabled={submitting}
+                            value={matrixOtherDraft}
+                            onChange={(e) => setMatrixOtherDraft(e.target.value)}
+                            placeholder={t("matrixOtherPlaceholder")}
+                            className="h-11 w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3.5 text-sm text-slate-900 dark:text-slate-100 shadow-xs placeholder:text-slate-400 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:opacity-50"
+                          />
+                          {matrixOtherDraft.trim() !== "" && (
+                            <button
+                              type="button"
+                              disabled={submitting}
+                              onClick={() => setMatrixOtherDraft("")}
+                              aria-label={t("matrixClearOther")}
+                              className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors shrink-0"
+                            >
+                              <X className="size-4" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

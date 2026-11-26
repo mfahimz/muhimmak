@@ -76,11 +76,17 @@ export async function POST(request: Request) {
 
     // Construct the user prompt with lean context
     let answeredContext = '';
+    const matrixOtherMap =
+      answers._matrixOther && typeof answers._matrixOther === 'object' && !Array.isArray(answers._matrixOther)
+        ? (answers._matrixOther as Record<string, unknown>)
+        : null;
     for (const [fieldId, value] of Object.entries(answers)) {
       if (fieldId.startsWith('_')) continue;
       const label = questionLabels[fieldId] || 'Question';
+      const otherRaw = matrixOtherMap?.[fieldId];
+      const otherSuffix = typeof otherRaw === 'string' && otherRaw.trim() ? ` (Other: ${otherRaw.trim()})` : '';
       const formattedVal =
-        value && typeof value === 'object' ? JSON.stringify(value) : String(value);
+        value && typeof value === 'object' ? `${JSON.stringify(value)}${otherSuffix}` : String(value);
       answeredContext += `- Question: "${label}"\n  Answer: "${formattedVal}"\n`;
     }
 

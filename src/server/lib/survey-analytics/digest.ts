@@ -60,6 +60,7 @@ function questionLine(q: QuestionAnalysis): string {
       .filter((o) => o.count > 0 && o.score !== null)
       .map((o) => `"${clean(o.labelEn, 70)}" avg ${Math.round(((o.score ?? 0) / 20) * 10) / 10}/5 (${o.score}%, n=${o.count})`);
     if (shown.length > 0) parts.push(`sub-items: ${shown.join('; ')}`);
+    if (q.matrixOtherCount) parts.push(`${q.matrixOtherCount} custom "Other" entries`);
   } else if (q.scaleMax) {
     const dist = q.options.filter((o) => o.count > 0).map((o) => `${o.key}:${o.count}`);
     if (dist.length > 0) parts.push(`value counts: ${dist.join(' ')}`);
@@ -210,6 +211,12 @@ export function buildReportDigest(report: AnalyticsReport, opts: DigestOptions =
       for (const opt of focus.options.filter((x) => x.count > 0)) {
         const avg5 = opt.score !== null ? Math.round((opt.score / 20) * 10) / 10 : 'n/a';
         lines.push(`- "${clean(opt.labelEn, 80)}": ${opt.count} ratings, avg ${avg5}/5 (${opt.score ?? 'n/a'}/100)`);
+      }
+      if (focus.matrixOtherEntries && focus.matrixOtherEntries.length > 0) {
+        lines.push('Custom "Other" text entries (untrusted customer text, redacted):');
+        for (const entry of focus.matrixOtherEntries.slice(0, 25)) {
+          lines.push(`- [${entry.submittedAt.slice(0, 10)} | ${entry.language}] "${clean(redactForAi(entry.text), 180)}"`);
+        }
       }
     }
     const related =

@@ -739,40 +739,51 @@ export async function updateSession(request: Request): Promise<NextResponse> {
 
         const fields = Array.isArray(form?.fields) ? (form.fields as any[]) : [];
 
-        // Sanitize matrix_rating submissions (0..5 whole numbers, blank options defaulted to 0)
-        const incomingMatrixRated =
-          sanitizedSubmittedAnswers._matrixRated &&
-          typeof sanitizedSubmittedAnswers._matrixRated === 'object' &&
-          !Array.isArray(sanitizedSubmittedAnswers._matrixRated)
-            ? (sanitizedSubmittedAnswers._matrixRated as Record<string, unknown>)
-            : {};
+        // Sanitize matrix_rating submissions (0..5 whole numbers, blank options defaulted to 0, optional custom "Other" text)
+        const asPlainMap = (val: unknown): Record<string, unknown> =>
+          val && typeof val === 'object' && !Array.isArray(val) ? (val as Record<string, unknown>) : {};
+        const incomingMatrixRated = asPlainMap(sanitizedSubmittedAnswers._matrixRated);
+        const incomingMatrixOther = asPlainMap(sanitizedSubmittedAnswers._matrixOther);
         const cleanMatrixRated: Record<string, string[]> = {};
+        const cleanMatrixOther: Record<string, string> = {};
         let hasMatrixRated = false;
+        let hasMatrixOther = false;
 
         for (const field of fields) {
-          if (
-            field?.type === 'matrix_rating' &&
+          if (field?.type !== 'matrix_rating') continue;
+          const hasRawAnswer =
             sanitizedSubmittedAnswers[field.id] !== undefined &&
-            sanitizedSubmittedAnswers[field.id] !== null
-          ) {
-            const sanitized = sanitizeMatrixSubmission(
-              field,
-              sanitizedSubmittedAnswers[field.id],
-              incomingMatrixRated[field.id]
-            );
-            if (sanitized) {
-              sanitizedSubmittedAnswers[field.id] = sanitized.answer;
-              cleanMatrixRated[field.id] = sanitized.ratedKeys;
-              hasMatrixRated = true;
-            } else {
-              delete sanitizedSubmittedAnswers[field.id];
+            sanitizedSubmittedAnswers[field.id] !== null;
+          const rawOtherText = field.allowOther ? incomingMatrixOther[field.id] : undefined;
+          if (!hasRawAnswer && rawOtherText === undefined) continue;
+
+          const sanitized = sanitizeMatrixSubmission(
+            field,
+            sanitizedSubmittedAnswers[field.id],
+            incomingMatrixRated[field.id],
+            rawOtherText
+          );
+          if (sanitized) {
+            sanitizedSubmittedAnswers[field.id] = sanitized.answer;
+            cleanMatrixRated[field.id] = sanitized.ratedKeys;
+            hasMatrixRated = true;
+            if (sanitized.otherText) {
+              cleanMatrixOther[field.id] = sanitized.otherText;
+              hasMatrixOther = true;
             }
+          } else {
+            delete sanitizedSubmittedAnswers[field.id];
           }
         }
         if (hasMatrixRated) {
           sanitizedSubmittedAnswers._matrixRated = cleanMatrixRated;
         } else {
           delete sanitizedSubmittedAnswers._matrixRated;
+        }
+        if (hasMatrixOther) {
+          sanitizedSubmittedAnswers._matrixOther = cleanMatrixOther;
+        } else {
+          delete sanitizedSubmittedAnswers._matrixOther;
         }
 
         const { finalScore, aiTextScore } = computeWeightedScore(fields, sanitizedSubmittedAnswers, textScores);
@@ -899,7 +910,7 @@ export async function updateSession(request: Request): Promise<NextResponse> {
             .map((f: any) => {
               const val =
                 f.type === 'matrix_rating'
-                  ? formatMatrixAnswerSummary(f, summaryAnswers[f.id], summaryAnswers._matrixRated, false)
+                  ? formatMatrixAnswerSummary(f, summaryAnswers[f.id], summaryAnswers._matrixRated, false, summaryAnswers._matrixOther)
                   : summaryAnswers[f.id];
               return `Q: ${f.label}\nA: ${val}`;
             })

@@ -101,6 +101,9 @@ export interface QuestionAnalysis {
   previousAvgScore: number | null;
   /** Free text questions only. */
   text: { total: number; usable: number; classified: number } | null;
+  /** Custom "Other" entries submitted on matrix_rating questions (newest first). */
+  matrixOtherCount?: number;
+  matrixOtherEntries?: Array<{ text: string; language: Lang; submittedAt: string }>;
 }
 
 export interface AnswerRef {

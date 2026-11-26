@@ -42,7 +42,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { toArabicNumerals } from "@/lib/utils/arabic-numerals";
-import { computeMatrixAverageRaw, getMatrixEntries } from "@/lib/forms/matrix";
+import { computeMatrixAverageRaw, getVisibleMatrixEntries } from "@/lib/forms/matrix";
 import type { VisitScoreDetails } from "@/server/services/sessions.service";
 
 interface SessionDetailClientProps {
@@ -362,30 +362,48 @@ export default function SessionDetailClient({
               )}
 
               {field.type === "matrix_rating" && (() => {
-                const entries = getMatrixEntries(field, answer, stageAnswers._matrixRated, locale === "ar");
+                const { entries, otherText } = getVisibleMatrixEntries(
+                  field,
+                  answer,
+                  stageAnswers._matrixRated,
+                  locale === "ar",
+                  stageAnswers._matrixOther
+                );
                 const avg = computeMatrixAverageRaw(field, answer, stageAnswers._matrixRated);
                 return (
                   <div className="space-y-2">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {entries.map((entry, entryIdx) => (
-                        <div
-                          key={entryIdx}
-                          className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-muted/20 px-3 py-2 text-xs"
-                        >
-                          <span className="font-medium text-foreground">{entry.label}</span>
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            {!entry.wasRated && (
-                              <span className="rounded bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                                {t("matrixUnratedBadge")}
+                    {entries.length > 0 && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {entries.map((entry, entryIdx) => (
+                          <div
+                            key={entryIdx}
+                            className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-muted/20 px-3 py-2 text-xs"
+                          >
+                            <span className="font-medium text-foreground">{entry.label}</span>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              {!entry.wasRated && (
+                                <span className="rounded bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                                  {t("matrixUnratedBadge")}
+                                </span>
+                              )}
+                              <span className="font-bold text-foreground tabular-nums">
+                                {toArabicNumerals(entry.score, locale)} / {toArabicNumerals(5, locale)}
                               </span>
-                            )}
-                            <span className="font-bold text-foreground tabular-nums">
-                              {toArabicNumerals(entry.score, locale)} / {toArabicNumerals(5, locale)}
-                            </span>
+                            </div>
                           </div>
-                        </div>
-                      ))}
-                    </div>
+                        ))}
+                      </div>
+                    )}
+                    {otherText && (
+                      <div className="rounded-lg border border-indigo-200/70 dark:border-indigo-800/60 bg-indigo-50/40 dark:bg-indigo-950/20 px-3 py-2 text-xs">
+                        <span className="font-semibold text-indigo-700 dark:text-indigo-300 me-1.5">
+                          {t("matrixOtherBadge")}:
+                        </span>
+                        <span className="text-foreground" dir="auto">
+                          &ldquo;{otherText}&rdquo;
+                        </span>
+                      </div>
+                    )}
                     {avg && (
                       <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums">
                         {t("matrixAvgSummary", {

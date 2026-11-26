@@ -50,6 +50,25 @@ function QuestionDetail({ q, onAsk }: { q: QuestionAnalysis; onAsk: QuestionsTab
         ))}
       </ul>
 
+      {isMatrix && q.matrixOtherEntries && q.matrixOtherEntries.length > 0 && (
+        <div className="space-y-1.5 max-w-xl">
+          <p className="text-xs font-medium text-foreground">
+            {t("q.matrixOtherTitle", { count: num(q.matrixOtherCount ?? q.matrixOtherEntries.length) })}
+          </p>
+          <ul className="space-y-1">
+            {q.matrixOtherEntries.slice(0, 10).map((entry, idx) => (
+              <li
+                key={idx}
+                dir="auto"
+                className="rounded-md border border-border bg-background px-2.5 py-1.5 text-xs text-foreground"
+              >
+                &ldquo;{entry.text}&rdquo;
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <div className="space-y-1 text-xs text-muted-foreground">
         <p>
           {t("q.answers", { n: num(q.answered), nRaw: q.answered })}

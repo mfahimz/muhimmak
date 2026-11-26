@@ -1,5 +1,6 @@
 export const MATRIX_MIN_SCORE = 0;
 export const MATRIX_MAX_SCORE = 5;
+export const MAX_MATRIX_OTHER_LENGTH = 500;
 
 const ARABIC_TO_ASCII_DIGITS: Record<string, string> = {
   '٠': '0', '١': '1', '٢': '2', '٣': '3', '٤': '4',
@@ -7,6 +8,21 @@ const ARABIC_TO_ASCII_DIGITS: Record<string, string> = {
   '۰': '0', '۱': '1', '۲': '2', '۳': '3', '۴': '4',
   '۵': '5', '۶': '6', '۷': '7', '۸': '8', '۹': '9',
 };
+
+function getFieldMapEntry(map: unknown, fieldId: string): unknown {
+  if (!map || typeof map !== 'object' || Array.isArray(map)) return undefined;
+  return (map as Record<string, unknown>)[fieldId];
+}
+
+export function sanitizeMatrixOtherText(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim().slice(0, MAX_MATRIX_OTHER_LENGTH);
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+export function getMatrixOtherText(fieldId: string, matrixOtherMap?: unknown): string | null {
+  return sanitizeMatrixOtherText(getFieldMapEntry(matrixOtherMap, fieldId));
+}
 
 /**
  * Normalizes a single-character numeric entry from Western, Eastern Arabic, or Persian digits.
@@ -42,10 +58,7 @@ export function getMatrixRatedKeys(
   if (!isMatrixAnswer(answer)) return [];
 
   const answerRecord = answer as Record<string, unknown>;
-  const explicitMap =
-    matrixRatedMap && typeof matrixRatedMap === 'object' && !Array.isArray(matrixRatedMap)
-      ? (matrixRatedMap as Record<string, unknown>)[field.id]
-      : undefined;
+  const explicitMap = getFieldMapEntry(matrixRatedMap, field.id);
 
   if (Array.isArray(explicitMap)) {
     return explicitMap.filter(
@@ -95,15 +108,19 @@ export function computeMatrixAverageRaw(
  * Sanitizes an incoming `matrix_rating` answer from the public survey endpoint.
  * Unentered sub-options default to `0` in the saved record, while `ratedKeys` records only
  * sub-options that were explicitly entered as whole numbers in `0..5`.
+ * When `field.allowOther` is enabled, optional custom text from `rawOtherText` is also sanitized.
  */
 export function sanitizeMatrixSubmission(
-  field: { id: string; options?: string[] },
+  field: { id: string; options?: string[]; allowOther?: boolean },
   rawAnswer: unknown,
-  rawRatedKeys: unknown
-): { answer: Record<string, number>; ratedKeys: string[] } | null {
-  if (!isMatrixAnswer(rawAnswer)) return null;
+  rawRatedKeys: unknown,
+  rawOtherText?: unknown
+): { answer: Record<string, number>; ratedKeys: string[]; otherText: string | null } | null {
+  const otherText = field.allowOther ? sanitizeMatrixOtherText(rawOtherText) : null;
+  const hasMatrixObj = isMatrixAnswer(rawAnswer);
+  if (!hasMatrixObj && !otherText) return null;
 
-  const rawRecord = rawAnswer as Record<string, unknown>;
+  const rawRecord = hasMatrixObj ? (rawAnswer as Record<string, unknown>) : {};
   const options =
     Array.isArray(field.options) && field.options.length > 0
       ? field.options
@@ -111,27 +128,29 @@ export function sanitizeMatrixSubmission(
 
   const sanitizedAnswer: Record<string, number> = {};
   for (const opt of options) {
-    const num = Number(rawRecord[opt]);
+    const num = hasMatrixObj ? Number(rawRecord[opt]) : NaN;
     sanitizedAnswer[opt] =
       Number.isInteger(num) && num >= MATRIX_MIN_SCORE && num <= MATRIX_MAX_SCORE ? num : 0;
   }
 
-  let ratedKeys: string[];
-  if (Array.isArray(rawRatedKeys)) {
-    const rawSet = new Set(rawRatedKeys.filter((k): k is string => typeof k === 'string'));
-    ratedKeys = options.filter((opt) => {
-      if (!rawSet.has(opt)) return false;
-      const num = Number(rawRecord[opt]);
-      return Number.isInteger(num) && num >= MATRIX_MIN_SCORE && num <= MATRIX_MAX_SCORE;
-    });
-  } else {
-    ratedKeys = options.filter((opt) => {
-      const val = rawRecord[opt];
-      return typeof val === 'number' && Number.isInteger(val) && val >= MATRIX_MIN_SCORE && val <= MATRIX_MAX_SCORE;
-    });
+  let ratedKeys: string[] = [];
+  if (hasMatrixObj) {
+    if (Array.isArray(rawRatedKeys)) {
+      const rawSet = new Set(rawRatedKeys.filter((k): k is string => typeof k === 'string'));
+      ratedKeys = options.filter((opt) => {
+        if (!rawSet.has(opt)) return false;
+        const num = Number(rawRecord[opt]);
+        return Number.isInteger(num) && num >= MATRIX_MIN_SCORE && num <= MATRIX_MAX_SCORE;
+      });
+    } else {
+      ratedKeys = options.filter((opt) => {
+        const val = rawRecord[opt];
+        return typeof val === 'number' && Number.isInteger(val) && val >= MATRIX_MIN_SCORE && val <= MATRIX_MAX_SCORE;
+      });
+    }
   }
 
-  return { answer: sanitizedAnswer, ratedKeys };
+  return { answer: sanitizedAnswer, ratedKeys, otherText };
 }
 
 export interface MatrixEntry {
@@ -156,10 +175,7 @@ export function getMatrixEntries(
     ...Object.keys(answerRecord).filter((k) => !options.includes(k)),
   ];
 
-  const explicitMap =
-    matrixRatedMap && typeof matrixRatedMap === 'object' && !Array.isArray(matrixRatedMap)
-      ? (matrixRatedMap as Record<string, unknown>)[field.id]
-      : undefined;
+  const explicitMap = getFieldMapEntry(matrixRatedMap, field.id);
   const hasExplicitRated = Array.isArray(explicitMap);
   const ratedSet = hasExplicitRated
     ? new Set(explicitMap.filter((k): k is string => typeof k === 'string'))
@@ -179,15 +195,42 @@ export function getMatrixEntries(
     });
 }
 
+/**
+ * Resolves rated/unrated entries alongside any custom "Other" text.
+ * Hides unrated preset rows when the customer skipped all numeric boxes and only entered "Other".
+ */
+export function getVisibleMatrixEntries(
+  field: { id: string; options?: string[]; ar?: { options?: string[] } },
+  answer: unknown,
+  matrixRatedMap?: unknown,
+  isArabic = false,
+  matrixOtherMap?: unknown
+): { entries: MatrixEntry[]; otherText: string | null } {
+  const allEntries = getMatrixEntries(field, answer, matrixRatedMap, isArabic);
+  const otherText = getMatrixOtherText(field.id, matrixOtherMap);
+  const entries = otherText && !allEntries.some((e) => e.wasRated) ? [] : allEntries;
+  return { entries, otherText };
+}
+
 export function formatMatrixAnswerSummary(
   field: { id: string; options?: string[]; ar?: { options?: string[] } },
   answer: unknown,
   matrixRatedMap?: unknown,
-  isArabic = false
+  isArabic = false,
+  matrixOtherMap?: unknown
 ): string {
-  const entries = getMatrixEntries(field, answer, matrixRatedMap, isArabic);
-  if (entries.length === 0) return '';
-  return entries
-    .map((e) => (e.wasRated ? `${e.label}: ${e.score}/5` : `${e.label}: ${e.score}/5 (unrated)`))
-    .join(', ');
+  const { entries, otherText } = getVisibleMatrixEntries(
+    field,
+    answer,
+    matrixRatedMap,
+    isArabic,
+    matrixOtherMap
+  );
+  const parts = entries.map((e) =>
+    e.wasRated ? `${e.label}: ${e.score}/5` : `${e.label}: ${e.score}/5 (unrated)`
+  );
+  if (otherText) {
+    parts.push(`${isArabic ? 'أخرى' : 'Other'}: ${otherText}`);
+  }
+  return parts.join(', ');
 }

@@ -707,6 +707,7 @@ Constraints:
       options: string[];
       weight: number;
       dependsOn: null;
+      allowOther?: boolean;
     }> = [];
     for (let i = 0; i < parsed.fields.length; i++) {
       const item = parsed.fields[i];
@@ -730,6 +731,7 @@ Constraints:
         options: hasOptions && Array.isArray(item.options) ? item.options.map(String) : [],
         weight: isText ? 0 : Number.isFinite(Number(item.weight)) ? Math.max(0, Math.round(Number(item.weight))) : 0,
         dependsOn: null,
+        ...(item.type === 'matrix_rating' ? { allowOther: true } : {}),
       });
     }
 

@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import type { LiveResponsesData, EnrichedResponse } from "@/server/services/responses.service";
 import { toArabicNumerals } from "@/lib/utils/arabic-numerals";
-import { getMatrixEntries, isMatrixAnswer } from "@/lib/forms/matrix";
+import { getMatrixOtherText, getVisibleMatrixEntries, isMatrixAnswer } from "@/lib/forms/matrix";
 import { DateRangeFilter, type PresetType } from "@/components/dashboard/DateRangeFilter";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -163,10 +163,17 @@ export function ResponsesClient({
   const currentQuestionAnswers = React.useMemo(() => {
     if (!currentQuestion) return [];
     return filteredResponses
-      .filter((r) => r.answers[currentQuestion.id] !== undefined && r.answers[currentQuestion.id] !== null && r.answers[currentQuestion.id] !== "")
+      .filter((r) => {
+        const val = r.answers[currentQuestion.id];
+        if (val !== undefined && val !== null && val !== "") return true;
+        return (
+          currentQuestion.type === "matrix_rating" &&
+          getMatrixOtherText(currentQuestion.id, r.answers._matrixOther) !== null
+        );
+      })
       .map((r) => ({
         response: r,
-        answer: r.answers[currentQuestion.id],
+        answer: r.answers[currentQuestion.id] ?? null,
         score: r.perQuestionScores[currentQuestion.id],
       }));
   }, [filteredResponses, currentQuestion]);
@@ -524,6 +531,27 @@ export function ResponsesClient({
                           </div>
                         ))}
                       </div>
+                      {currentQuestionStats.matrixOtherEntries &&
+                        currentQuestionStats.matrixOtherEntries.length > 0 && (
+                          <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+                            <span className="text-xs font-semibold text-slate-500 block mb-2">
+                              {t("matrixOtherResponsesLabel")} ({toArabicNumerals(currentQuestionStats.matrixOtherEntries.length, locale)})
+                            </span>
+                            <div className="flex flex-wrap gap-2">
+                              {currentQuestionStats.matrixOtherEntries.slice(0, 12).map((entry) => (
+                                <span
+                                  key={entry.responseId}
+                                  dir="auto"
+                                  title={`${entry.plateNumber || "N/A"} · ${entry.submittedAt.slice(0, 10)}`}
+                                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50/70 dark:bg-indigo-950/30 text-xs text-indigo-800 dark:text-indigo-200"
+                                >
+                                  <span className="font-semibold">{t("matrixOtherPrefix")}:</span>
+                                  <span>{entry.text}</span>
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                     </div>
                   )}
                 </div>
@@ -583,9 +611,11 @@ export function ResponsesClient({
                                 {response.language}
                               </td>
                               <td className="py-2.5 px-3 text-slate-900 dark:text-slate-100 font-medium max-w-md">
-                                {currentQuestion.type === "matrix_rating" && isMatrixAnswer(answer) ? (
-                                  <div className="flex flex-wrap gap-1.5">
-                                    {getMatrixEntries(
+                                {currentQuestion.type === "matrix_rating" &&
+                                (isMatrixAnswer(answer) ||
+                                  getMatrixOtherText(currentQuestion.id, response.answers._matrixOther) !== null) ? (
+                                  (() => {
+                                    const { entries, otherText } = getVisibleMatrixEntries(
                                       {
                                         id: currentQuestion.id,
                                         options: currentQuestion.options,
@@ -593,23 +623,38 @@ export function ResponsesClient({
                                       },
                                       answer,
                                       response.answers._matrixRated,
-                                      locale === "ar"
-                                    ).map((entry, entryIdx) => (
-                                      <span
-                                        key={entryIdx}
-                                        className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] ${
-                                          entry.wasRated
-                                            ? "border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-200"
-                                            : "border-dashed border-slate-200 dark:border-slate-800 text-slate-400"
-                                        }`}
-                                      >
-                                        <span>{entry.label}:</span>
-                                        <span className="font-bold tabular-nums">
-                                          {toArabicNumerals(entry.score, locale)}/{toArabicNumerals(5, locale)}
-                                        </span>
-                                      </span>
-                                    ))}
-                                  </div>
+                                      locale === "ar",
+                                      response.answers._matrixOther
+                                    );
+                                    return (
+                                      <div className="flex flex-wrap gap-1.5">
+                                        {entries.map((entry, entryIdx) => (
+                                          <span
+                                            key={entryIdx}
+                                            className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] ${
+                                              entry.wasRated
+                                                ? "border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-200"
+                                                : "border-dashed border-slate-200 dark:border-slate-800 text-slate-400"
+                                            }`}
+                                          >
+                                            <span>{entry.label}:</span>
+                                            <span className="font-bold tabular-nums">
+                                              {toArabicNumerals(entry.score, locale)}/{toArabicNumerals(5, locale)}
+                                            </span>
+                                          </span>
+                                        ))}
+                                        {otherText && (
+                                          <span
+                                            dir="auto"
+                                            className="inline-flex items-center gap-1 rounded-md border border-indigo-200 dark:border-indigo-800 bg-indigo-50/70 dark:bg-indigo-950/30 px-2 py-0.5 text-[11px] text-indigo-800 dark:text-indigo-200"
+                                          >
+                                            <span className="font-semibold">{t("matrixOtherPrefix")}:</span>
+                                            <span>{otherText}</span>
+                                          </span>
+                                        )}
+                                      </div>
+                                    );
+                                  })()
                                 ) : (
                                   String(answer)
                                 )}
@@ -917,6 +962,11 @@ export function ResponsesClient({
                                 : "—"}
                             </span>
                           ))}
+                          {qs.matrixOtherCount && qs.matrixOtherCount > 0 ? (
+                            <span className="inline-block bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 px-1.5 py-0.5 rounded text-[10px] font-semibold">
+                              {t("matrixOtherCountBadge", { count: toArabicNumerals(qs.matrixOtherCount, locale) })}
+                            </span>
+                          ) : null}
                         </div>
                       ) : qs.type === "text" ? (
                         <span className="text-indigo-600 dark:text-indigo-400 font-medium">
@@ -979,32 +1029,58 @@ export function ResponsesClient({
                 </h5>
                 <div className="space-y-3">
                   {data.questions
-                    .filter((q) => inspectSession.answers[q.id] !== undefined)
+                    .filter(
+                      (q) =>
+                        inspectSession.answers[q.id] !== undefined ||
+                        (q.type === "matrix_rating" &&
+                          getMatrixOtherText(q.id, inspectSession.answers._matrixOther) !== null)
+                    )
                     .map((q) => (
                       <div
                         key={q.id}
                         className="p-3 rounded-lg border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 text-xs"
                       >
                         <div className="text-slate-500 font-semibold mb-1">{q.labelEn}</div>
-                        {q.type === "matrix_rating" && isMatrixAnswer(inspectSession.answers[q.id]) ? (
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 mt-1.5">
-                            {getMatrixEntries(
+                        {q.type === "matrix_rating" &&
+                        (isMatrixAnswer(inspectSession.answers[q.id]) ||
+                          getMatrixOtherText(q.id, inspectSession.answers._matrixOther) !== null) ? (
+                          (() => {
+                            const { entries, otherText } = getVisibleMatrixEntries(
                               { id: q.id, options: q.options, ar: { options: q.optionsAr } },
                               inspectSession.answers[q.id],
                               inspectSession.answers._matrixRated,
-                              locale === "ar"
-                            ).map((entry, entryIdx) => (
-                              <div
-                                key={entryIdx}
-                                className="flex items-center justify-between gap-2 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2.5 py-1 text-xs"
-                              >
-                                <span className="text-slate-700 dark:text-slate-300">{entry.label}</span>
-                                <span className="font-bold text-slate-900 dark:text-white tabular-nums">
-                                  {toArabicNumerals(entry.score, locale)}/{toArabicNumerals(5, locale)}
-                                </span>
+                              locale === "ar",
+                              inspectSession.answers._matrixOther
+                            );
+                            return (
+                              <div className="space-y-1.5 mt-1.5">
+                                {entries.length > 0 && (
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                                    {entries.map((entry, entryIdx) => (
+                                      <div
+                                        key={entryIdx}
+                                        className="flex items-center justify-between gap-2 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2.5 py-1 text-xs"
+                                      >
+                                        <span className="text-slate-700 dark:text-slate-300">{entry.label}</span>
+                                        <span className="font-bold text-slate-900 dark:text-white tabular-nums">
+                                          {toArabicNumerals(entry.score, locale)}/{toArabicNumerals(5, locale)}
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                                {otherText && (
+                                  <div
+                                    dir="auto"
+                                    className="rounded-md border border-indigo-200 dark:border-indigo-800 bg-indigo-50/70 dark:bg-indigo-950/30 px-2.5 py-1.5 text-xs text-indigo-800 dark:text-indigo-200"
+                                  >
+                                    <span className="font-semibold me-1.5">{t("matrixOtherPrefix")}:</span>
+                                    <span>{otherText}</span>
+                                  </div>
+                                )}
                               </div>
-                            ))}
-                          </div>
+                            );
+                          })()
                         ) : (
                           <div className="text-slate-900 dark:text-white font-medium text-sm">
                             {String(inspectSession.answers[q.id])}
